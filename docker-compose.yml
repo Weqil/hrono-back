@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hrono-postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-hrono}
+      POSTGRES_USER: ${DB_USERNAME:-hrono}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - db_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USERNAME:-hrono} -d ${DB_DATABASE:-hrono}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hrono-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    networks:
+      - db_net
+      - nginx_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: hrono-nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - nginx_net
+    depends_on:
+      - app
+
+networks:
+  db_net:
+    driver: bridge
+  nginx_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
