@@ -1,0 +1,4 @@
+{
+  "name": "hrono_nginx",
+  "data": "server {\n    listen 80;\n    server_name _;\n    index index.php;\n\n    charset utf-8;\n\n    location / {\n        fastcgi_pass app:9000;\n        include fastcgi_params;\n        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;\n        fastcgi_param PATH_INFO $fastcgi_path_info;\n    }\n\n    location ~ /\\.(?!well-known).* {\n        deny all;\n    }\n}\n"
+}
