@@ -1,5 +1,5 @@
 # Swarmpit: Stacks → Add stack
-# Образ app: weqil/hrono-app:1.0.1
+# Образ app: weqil/hrono-app:1.0.4 — после push на сервере: docker pull + redeploy stack
 #
 # Перед DEPLOY — создать Docker Config:
 #   docker config create hrono_nginx docker/nginx/swarm.conf
@@ -24,7 +24,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.1
+    image: weqil/hrono-app:1.0.4
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -43,6 +43,9 @@ services:
       SESSION_DRIVER: database
       CACHE_STORE: database
       QUEUE_CONNECTION: database
+      BROADCAST_CONNECTION: log
+      API_SECRET: "${API_SECRET:-}"
+      WS_SECRET_KEY: "${WS_SECRET_KEY:-}"
     networks:
       - db_net
       - nginx_net

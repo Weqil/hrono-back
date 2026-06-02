@@ -29,7 +29,14 @@ RUN composer install \
 # Stage 2: финальный образ PHP-FPM + код приложения
 FROM php:8.4-fpm-alpine AS app
 
-RUN apk add --no-cache --virtual .build-deps \
+# Runtime: postgresql-libs + libpq дают libpq.so.5 для pdo_pgsql.so
+RUN apk add --no-cache \
+        postgresql-libs \
+        libpq \
+        libzip \
+        icu-libs \
+        oniguruma \
+    && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS \
         postgresql-dev \
         libzip-dev \
@@ -44,6 +51,8 @@ RUN apk add --no-cache --virtual .build-deps \
         opcache \
         pcntl \
     && apk del .build-deps \
+    && test -e /usr/lib/libpq.so.5 \
+    && php -m | grep -qx pdo_pgsql \
     && rm -rf /tmp/* /var/cache/apk/*
 
 RUN { \
