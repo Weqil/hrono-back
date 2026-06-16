@@ -2,124 +2,115 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Log;
+
 final class ArrivalResultsReducer
 {
     /**
-     * @param  array<int, mixed>  $items
+     * @param  array<int, mixed>  $items  Массив участников из check-point, структура IParticipantState
      * @return array{last_lap_number:int, participants:array<int, mixed>} Reduced & sorted payload parts for Moto.
      */
     public static function reduce(array $items): array
     {
-        // Find latest lap number across all riders.
-        $maxLapNumber = 0;
+        // Log::debug('--- ArrivalResultsReducer START ---', ['all_items' => $items]);
 
+        $processedParticipants = [];
+        $overallMaxLapNumber = 0;
+
+        // 1. ПЕРВИЧНАЯ ОБРАБОТКА
         foreach ($items as $item) {
-            if (! is_array($item)) {
+            if (!is_array($item) || !isset($item['participantData']) || !is_array($item['participantData'])) {
                 continue;
             }
 
-            $laps = $item['laps'] ?? null;
-            if (! is_array($laps)) {
-                continue;
-            }
+            $laps = $item['laps'] ?? [];
+            $lapTimes = array_column(array_filter($laps, fn($lap) => ($lap['lapTimeMs'] ?? 0) > 0), 'lapTimeMs');
+            $averageLapTimeMs = count($lapTimes) > 0 ? array_sum($lapTimes) / count($lapTimes) : 0;
+            $lastLapNumber = (int) ($item['lapCount'] ?? 0);
 
-            foreach ($laps as $lap) {
-                if (! is_array($lap)) {
-                    continue;
-                }
+            $processedParticipants[] = [
+                'participantData' => $item['participantData'],
+                'last_lap_number' => $lastLapNumber,
+                'total_race_time_ms' => (int) ($item['totalRaceTimeMs'] ?? 0),
+                'last_lap_timestamp_ms' => (int) ($item['lastLapTimestampMs'] ?? 0),
+                'average_lap_time_ms' => $averageLapTimeMs,
+            ];
 
-                $lapNumber = $lap['lapNumber'] ?? null;
-                if (is_int($lapNumber) && $lapNumber > $maxLapNumber) {
-                    $maxLapNumber = $lapNumber;
-                } elseif (is_string($lapNumber) && ctype_digit($lapNumber)) {
-                    $n = (int) $lapNumber;
-                    if ($n > $maxLapNumber) {
-                        $maxLapNumber = $n;
-                    }
-                }
+            if ($lastLapNumber > $overallMaxLapNumber) {
+                $overallMaxLapNumber = $lastLapNumber;
             }
         }
 
-        if ($maxLapNumber <= 0) {
-            return [
-                'last_lap_number' => 0,
-                'participants' => [],
+        if (empty($processedParticipants)) {
+            return ['last_lap_number' => 0, 'participants' => []];
+        }
+
+        // 2. ОПРЕДЕЛЕНИЕ ЛИДЕРА
+        $leader = null;
+        foreach ($processedParticipants as $participant) {
+            if ($leader === null ||
+                $participant['last_lap_number'] > $leader['last_lap_number'] ||
+                ($participant['last_lap_number'] === $leader['last_lap_number'] && $participant['total_race_time_ms'] < $leader['total_race_time_ms'])
+            ) {
+                $leader = $participant;
+            }
+        }
+
+        if ($leader === null) {
+            return ['last_lap_number' => $overallMaxLapNumber, 'participants' => []];
+        }
+
+        // 3. РАСЧЕТ ОТСТАВАНИЙ И ФОРМИРОВАНИЕ ВЫХОДНОГО МАССИВА
+        $finalParticipants = [];
+        foreach ($processedParticipants as $participant) {
+            $lapDiff = $leader['last_lap_number'] - $participant['last_lap_number'];
+
+            $displayTimeMs = 0;
+            // Рассчитываем отставание в мс, только если участник на том же круге, что и лидер
+            if ($lapDiff === 0) {
+                $displayTimeMs = $participant['total_race_time_ms'] - $leader['total_race_time_ms'];
+            }
+
+            $pData = $participant['participantData'];
+            $finalParticipants[] = [
+                'id' => $pData['id'] ?? null,
+                'lapCount' => $participant['last_lap_number'],
+                'lastLapTimestampMs' => $participant['last_lap_timestamp_ms'],
+                'totalRaceTimeMs' => $participant['total_race_time_ms'],
+                'position' => 0, // Будет присвоено после сортировки
+                'displayTimeMs' => $displayTimeMs, // Отставание в мс (только для тех, кто на круге лидера)
+                'laps_behind' => $lapDiff, // Количество кругов отставания (0, 1, 2...)
+                'participantData' => [
+                    'id' => $pData['id'] ?? null,
+                    'name' => $pData['name'] ?? '',
+                    'surname' => $pData['surname'] ?? '',
+                    'patronymic' => $pData['patronymic'] ?? '',
+                    'start_number' => $pData['start_number'] ?? null,
+                ],
             ];
         }
 
-        // Filter riders who have the latest lap.
-        $filtered = array_values(array_filter($items, static function ($item) use ($maxLapNumber): bool {
-            if (! is_array($item)) {
-                return false;
+        // 4. СОРТИРОВКА И ПРИСВОЕНИЕ МЕСТ
+        usort($finalParticipants, static function ($a, $b): int {
+            $lapDiff = $b['lapCount'] <=> $a['lapCount'];
+            if ($lapDiff !== 0) {
+                return $lapDiff;
             }
-
-            $laps = $item['laps'] ?? null;
-            if (! is_array($laps)) {
-                return false;
-            }
-
-            foreach ($laps as $lap) {
-                if (! is_array($lap)) {
-                    continue;
-                }
-
-                $lapNumber = $lap['lapNumber'] ?? null;
-                if ($lapNumber === $maxLapNumber) {
-                    return true;
-                }
-                if (is_string($lapNumber) && ctype_digit($lapNumber) && (int) $lapNumber === $maxLapNumber) {
-                    return true;
-                }
-            }
-
-            return false;
-        }));
-
-        // Sort by lastLapTimestampMs ascending.
-        usort($filtered, static function ($a, $b): int {
-            $aTs = is_array($a) ? ($a['lastLapTimestampMs'] ?? null) : null;
-            $bTs = is_array($b) ? ($b['lastLapTimestampMs'] ?? null) : null;
-
-            $aNum = is_int($aTs) || is_float($aTs)
-                ? (float) $aTs
-                : (is_string($aTs) && is_numeric($aTs) ? (float) $aTs : INF);
-
-            $bNum = is_int($bTs) || is_float($bTs)
-                ? (float) $bTs
-                : (is_string($bTs) && is_numeric($bTs) ? (float) $bTs : INF);
-
-            return $aNum <=> $bNum;
+            return $a['totalRaceTimeMs'] <=> $b['totalRaceTimeMs'];
         });
 
-        $leaderTs = null;
-        if (isset($filtered[0]) && is_array($filtered[0])) {
-            $ts = $filtered[0]['lastLapTimestampMs'] ?? null;
-            if (is_int($ts) || is_float($ts) || (is_string($ts) && is_numeric($ts))) {
-                $leaderTs = (float) $ts;
-            }
+        foreach ($finalParticipants as $idx => &$p) {
+            $p['position'] = $idx + 1;
         }
+        unset($p);
 
-        foreach ($filtered as $idx => &$item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
-            unset($item['laps']);
-            $item['position'] = $idx + 1;
-
-            $ts = $item['lastLapTimestampMs'] ?? null;
-            if ($leaderTs !== null && (is_int($ts) || is_float($ts) || (is_string($ts) && is_numeric($ts)))) {
-                $item['displayTimeMs'] = (float) $ts - $leaderTs;
-            } else {
-                $item['displayTimeMs'] = null;
-            }
-        }
-        unset($item);
+        $filteredFinalParticipants = array_filter($finalParticipants, function ($finalParticipant) {
+            return $finalParticipant['lapCount'] > 0;
+        });
 
         return [
-            'last_lap_number' => $maxLapNumber,
-            'participants' => $filtered,
+            'last_lap_number' => $overallMaxLapNumber,
+            'participants' => $filteredFinalParticipants,
         ];
     }
 }
-
