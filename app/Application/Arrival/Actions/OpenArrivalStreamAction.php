@@ -2,6 +2,7 @@
 
 namespace App\Application\Arrival\Actions;
 
+use App\Application\Arrival\Enums\CloseArrivalStreamOutcome;
 use App\Application\Arrival\Enums\OpenArrivalStreamOutcome;
 use App\Application\Moto\Actions\OpenRaceStreamAction;
 use App\Models\Arrival;
@@ -16,6 +17,7 @@ final class OpenArrivalStreamAction
 {
     public function __construct(
         private readonly OpenRaceStreamAction $openRaceStream,
+        private readonly CloseArrivalStreamAction $closeArrivalStream,
     ) {}
 
     public function execute(string $arrivalId, Request $request): OpenArrivalStreamOutcome
@@ -26,22 +28,37 @@ final class OpenArrivalStreamAction
             return OpenArrivalStreamOutcome::ArrivalNotFound;
         }
 
-        if ($arrival->moto_stream_closed_at !== null) {
-            return OpenArrivalStreamOutcome::AlreadyClosed;
-        }
-
-        if ($arrival->moto_stream_opened_at !== null) {
-            return OpenArrivalStreamOutcome::AlreadyOpened;
-        }
-
         $bearer = MotoBearerExtractor::fromRequest($request);
 
         if ($bearer === null) {
             return OpenArrivalStreamOutcome::BearerMissing;
         }
 
+        $openArrivals = Arrival::query()
+            ->where('moto_race_id', $arrival->moto_race_id)
+            ->whereNotNull('moto_stream_opened_at')
+            ->whereNull('moto_stream_closed_at')
+            ->get();
+
+        foreach ($openArrivals as $openArrival) {
+            $closeOutcome = $this->closeArrivalStream->execute((string) $openArrival->getKey(), $request);
+
+            if ($closeOutcome === CloseArrivalStreamOutcome::MotoFailed) {
+                return OpenArrivalStreamOutcome::MotoFailed;
+            }
+        }
+
+        $arrival->refresh();
+
+        if ($arrival->moto_stream_closed_at !== null) {
+            $arrival->forceFill([
+                'moto_stream_opened_at' => null,
+                'moto_stream_closed_at' => null,
+            ])->save();
+        }
+
         try {
-            $this->openRaceStream->execute($arrival->moto_race_id, $bearer);
+            $this->openRaceStream->execute($arrival->moto_race_id, $bearer, $arrival->name);
         } catch (RequestException $e) {
             Log::channel('info')->error('arrivals.stream.open_failed', [
                 'arrival_id' => $arrivalId,
@@ -61,7 +78,10 @@ final class OpenArrivalStreamAction
         }
 
         $openedAt = RequestTimeParser::fromRequest($request) ?? now();
-        $arrival->forceFill(['moto_stream_opened_at' => $openedAt])->save();
+        $arrival->forceFill([
+            'moto_stream_opened_at' => $openedAt,
+            'moto_stream_closed_at' => null,
+        ])->save();
 
         return OpenArrivalStreamOutcome::Opened;
     }

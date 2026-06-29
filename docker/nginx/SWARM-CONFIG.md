@@ -1,7 +1,9 @@
-# Docker Config `hrono_nginx` для Swarm
+# Docker Config `hrono_nginx` (устарело)
 
-Форма **Configs** в Swarmpit часто падает с `Content-Type text/plain` при вставке `swarm.conf`.
-Так и создают config в проде — через **Docker CLI** или **API** (JSON).
+С **1.0.11** nginx-образ `weqil/hrono-nginx` уже содержит `swarm.conf` и каталог `public/` (CSS/JS Filament).
+Отдельный Docker Config для nginx больше не нужен.
+
+Ниже — старый способ, если вы всё ещё на `nginx:alpine` + config без статики в образе.
 
 ## Способ 1 — на manager-ноде (как обычно в Swarm)
 

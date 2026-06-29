@@ -27,7 +27,7 @@ final class CloseArrivalStreamAction
         }
 
         if ($arrival->moto_stream_closed_at !== null) {
-            return CloseArrivalStreamOutcome::AlreadyClosed;
+            return CloseArrivalStreamOutcome::Closed;
         }
 
         if ($arrival->moto_stream_opened_at === null) {

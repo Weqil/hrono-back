@@ -21,7 +21,6 @@ final class CloseArrivalStreamController extends Controller
                 $this->streamData($id),
             ),
             CloseArrivalStreamOutcome::NotOpened => abort(409, __('arrivals.stream_not_opened')),
-            CloseArrivalStreamOutcome::AlreadyClosed => abort(409, __('arrivals.stream_already_closed')),
             CloseArrivalStreamOutcome::ArrivalNotFound => abort(404, __('arrivals.not_found')),
             CloseArrivalStreamOutcome::BearerMissing => abort(422, __('arrivals.stream_bearer_missing')),
             CloseArrivalStreamOutcome::MotoFailed => abort(502, __('arrivals.stream_close_failed')),

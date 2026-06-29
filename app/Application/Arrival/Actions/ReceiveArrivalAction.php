@@ -7,6 +7,7 @@ use App\Application\Moto\Actions\SendRaceResultsToMotoAction;
 use App\Models\Arrival;
 use App\Support\ArrivalResultsReducer;
 use App\Support\MotoBearerExtractor;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -76,6 +77,7 @@ final class ReceiveArrivalAction
         $payload = [
             'arrival_meta' => [
                 'race_id' => $arrival->moto_race_id,
+                'arrival_name' => $arrival->name,
                 'last_lap_number' => $reduced['last_lap_number'],
                 'stream_opened_at' => $streamOpenedAtMs,
             ],
@@ -96,6 +98,12 @@ final class ReceiveArrivalAction
 
         try {
             $this->sendResultsToMoto->execute($arrival->moto_race_id, $bearer, $jsonBody);
+        } catch (ConnectionException $e) {
+            Log::channel('info')->error('arrivals.results.moto_forward_failed', [
+                'arrival_id' => $arrivalId,
+                'moto_race_id' => $arrival->moto_race_id,
+                'message' => $e->getMessage(),
+            ]);
         } catch (RequestException $e) {
             Log::channel('info')->error('arrivals.results.moto_forward_failed', [
                 'arrival_id' => $arrivalId,

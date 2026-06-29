@@ -20,8 +20,6 @@ final class OpenArrivalStreamController extends Controller
                 200,
                 $this->streamData($id),
             ),
-            OpenArrivalStreamOutcome::AlreadyOpened => abort(409, __('arrivals.stream_already_opened')),
-            OpenArrivalStreamOutcome::AlreadyClosed => abort(409, __('arrivals.stream_already_closed')),
             OpenArrivalStreamOutcome::ArrivalNotFound => abort(404, __('arrivals.not_found')),
             OpenArrivalStreamOutcome::BearerMissing => abort(422, __('arrivals.stream_bearer_missing')),
             OpenArrivalStreamOutcome::MotoFailed => abort(502, __('arrivals.stream_open_failed')),

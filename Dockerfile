@@ -3,7 +3,13 @@ FROM composer:2 AS composer
 
 WORKDIR /app
 
-RUN apk add --no-cache --virtual .build-deps \
+RUN apk add --no-cache \
+        postgresql-libs \
+        libpq \
+        libzip \
+        icu-libs \
+        oniguruma \
+    && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS \
         postgresql-dev \
         libzip-dev \
