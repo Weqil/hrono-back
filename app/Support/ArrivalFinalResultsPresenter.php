@@ -31,6 +31,11 @@ final class ArrivalFinalResultsPresenter
             'finished_at_ms' => $arrival->finished_at->getTimestampMs(),
             'name' => $arrival->name,
             'time' => $arrival->time,
+            'arrival_type' => $arrival->arrivalType ? [
+                'id' => $arrival->arrivalType->id,
+                'name' => $arrival->arrivalType->name,
+                'slug' => $arrival->arrivalType->slug->value,
+            ] : null,
             'results' => $arrival->results->map(static function (ArrivalResult $result): array {
                 return [
                     'place' => $result->place,

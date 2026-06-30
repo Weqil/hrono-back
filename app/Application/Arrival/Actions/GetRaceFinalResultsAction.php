@@ -17,6 +17,7 @@ final class GetRaceFinalResultsAction
             ->whereNotNull('finished_at')
             ->whereHas('results')
             ->with([
+                'arrivalType',
                 'results' => static fn ($query) => $query->orderBy('place'),
                 'results.laps' => static fn ($query) => $query->orderBy('lap_number'),
             ])

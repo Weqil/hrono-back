@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Arrivals\Schemas;
 
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -21,6 +22,11 @@ class ArrivalForm
                     ->label('ID гонки (Moto)')
                     ->required()
                     ->numeric(),
+                Select::make('arrival_type_id')
+                    ->label('Тип заезда')
+                    ->relationship('arrivalType', 'name')
+                    ->searchable()
+                    ->preload(),
                 TextInput::make('time')
                     ->label('Время')
                     ->required(),

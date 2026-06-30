@@ -12,7 +12,7 @@ $allowedOrigins = array_values(array_filter(array_map(
 
 return [
 
-    'paths' => ['arrivals', 'arrivals/*', 'races', 'races/*', 'sanctum/csrf-cookie'],
+    'paths' => ['arrivals', 'arrivals/*', 'arrival-types', 'races', 'races/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 

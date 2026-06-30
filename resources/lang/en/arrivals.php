@@ -2,6 +2,8 @@
 
 return [
     'created' => 'Arrival has been created successfully.',
+    'types_fetched' => 'Arrival types have been fetched.',
+    'arrival_type_not_found' => 'The specified arrival type was not found.',
     'results_received' => 'Arrival results have been received.',
     'final_results_saved' => 'Final arrival results have been saved.',
     'final_results_fetched' => 'Final arrival results have been fetched.',

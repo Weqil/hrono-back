@@ -1,6 +1,6 @@
 # Образы:
-#   app:   weqil/hrono-app:1.0.12
-#   nginx: weqil/hrono-nginx:1.0.12
+#   app:   weqil/hrono-app:1.0.13
+#   nginx: weqil/hrono-nginx:1.0.13
 # После push: на сервере обновить stack в Swarmpit и Redeploy (pull сам не обновляет сервисы).
 
 version: "3.8"
@@ -23,7 +23,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.12
+    image: weqil/hrono-app:1.0.13
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -57,7 +57,7 @@ services:
         delay: 5s
 
   nginx:
-    image: weqil/hrono-nginx:1.0.12
+    image: weqil/hrono-nginx:1.0.13
     ports:
       - "${APP_PORT:-8081}:80"
     volumes:

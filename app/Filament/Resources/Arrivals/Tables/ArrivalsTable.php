@@ -7,6 +7,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -33,6 +34,10 @@ class ArrivalsTable
 
                         $query->where('moto_race_id', (int) $search);
                     }),
+                TextColumn::make('arrivalType.name')
+                    ->label('Тип')
+                    ->sortable()
+                    ->searchable(),
                 TextColumn::make('time')
                     ->label('Время'),
                 IconColumn::make('finished')
@@ -53,6 +58,13 @@ class ArrivalsTable
                     ->label('Эфир закрыт')
                     ->dateTime()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                SelectFilter::make('arrival_type_id')
+                    ->label('Тип заезда')
+                    ->relationship('arrivalType', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->recordActions([
                 EditAction::make(),

@@ -15,6 +15,7 @@ final class GetArrivalFinalResultsAction
     {
         $arrival = Arrival::query()
             ->with([
+                'arrivalType',
                 'results' => static fn ($query) => $query->orderBy('place'),
                 'results.laps' => static fn ($query) => $query->orderBy('lap_number'),
             ])
