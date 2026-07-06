@@ -134,8 +134,26 @@ final class ArrivalResultsReducer
                 $item['laps'] ?? [],
                 static fn ($lap): bool => is_array($lap) && (int) ($lap['lapTimeMs'] ?? 0) > 0,
             ));
+            $startTimestampMs = (int) ($item['startTimestampMs'] ?? 0);
+            $hasStartedOnly = $validLaps === [] && $startTimestampMs > 0;
 
-            if ($validLaps === []) {
+            if ($validLaps === [] && ! $hasStartedOnly) {
+                continue;
+            }
+
+            if ($hasStartedOnly) {
+                $pData = $item['participantData'];
+                $processedParticipants[] = [
+                    'participantData' => $pData,
+                    'last_lap_number' => 0,
+                    'total_race_time_ms' => (int) ($item['totalRaceTimeMs'] ?? 0),
+                    'last_lap_timestamp_ms' => (int) ($item['lastLapTimestampMs'] ?? 0),
+                    'best_lap_time_ms' => null,
+                    'last_lap_time_ms' => null,
+                    'reference_best_lap_time_ms' => null,
+                    'has_started_only' => true,
+                ];
+
                 continue;
             }
 
@@ -172,11 +190,32 @@ final class ArrivalResultsReducer
             return ['last_lap_number' => 0, 'participants' => []];
         }
 
-        $leaderBestLapTimeMs = min(array_column($processedParticipants, 'best_lap_time_ms'));
+        $bestLapTimes = array_values(array_filter(
+            array_column($processedParticipants, 'best_lap_time_ms'),
+            static fn ($value): bool => $value !== null && (int) $value > 0,
+        ));
+        $leaderBestLapTimeMs = $bestLapTimes !== [] ? min($bestLapTimes) : 0;
 
         $finalParticipants = [];
         foreach ($processedParticipants as $participant) {
             $pData = $participant['participantData'];
+
+            if (! empty($participant['has_started_only'])) {
+                $finalParticipants[] = [
+                    'id' => $pData['id'] ?? null,
+                    'lapCount' => 0,
+                    'lastLapTimestampMs' => $participant['last_lap_timestamp_ms'],
+                    'totalRaceTimeMs' => $participant['total_race_time_ms'],
+                    'position' => 0,
+                    'displayTimeMs' => 0,
+                    'lastLapDeltaSec' => 0.0,
+                    'laps_behind' => 0,
+                    'participantData' => self::participantData($pData),
+                ];
+
+                continue;
+            }
+
             $lastLapDeltaMs = $participant['last_lap_time_ms'] - $participant['reference_best_lap_time_ms'];
 
             $finalParticipants[] = [
@@ -194,6 +233,21 @@ final class ArrivalResultsReducer
         }
 
         usort($finalParticipants, static function ($a, $b): int {
+            $aHasBest = array_key_exists('bestLapTimeMs', $a) && (int) ($a['bestLapTimeMs'] ?? 0) > 0;
+            $bHasBest = array_key_exists('bestLapTimeMs', $b) && (int) ($b['bestLapTimeMs'] ?? 0) > 0;
+
+            if ($aHasBest && ! $bHasBest) {
+                return -1;
+            }
+
+            if (! $aHasBest && $bHasBest) {
+                return 1;
+            }
+
+            if (! $aHasBest && ! $bHasBest) {
+                return $a['lastLapTimestampMs'] <=> $b['lastLapTimestampMs'];
+            }
+
             $bestDiff = $a['bestLapTimeMs'] <=> $b['bestLapTimeMs'];
             if ($bestDiff !== 0) {
                 return $bestDiff;

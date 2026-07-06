@@ -124,6 +124,36 @@ final class ArrivalResultsReducerTest extends TestCase
         $this->assertSame(46_000, $result['participants'][0]['bestLapTimeMs']);
     }
 
+    #[Test]
+    public function test_qualification_arrival_includes_participant_with_start_only(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 0,
+                totalRaceTimeMs: 12_000,
+                laps: [],
+                lastLapTimestampMs: 12_000,
+                startTimestampMs: 12_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 1,
+                totalRaceTimeMs: 60_000,
+                laps: [['lapTimeMs' => 48_000]],
+                lastLapTimestampMs: 60_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertCount(2, $result['participants']);
+        $this->assertSame(2, $result['participants'][0]['id']);
+        $this->assertSame(1, $result['participants'][1]['id']);
+        $this->assertSame(0, $result['participants'][1]['lapCount']);
+        $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][1]);
+    }
+
     /**
      * @param  array<int, array{lapTimeMs:int}>  $laps
      * @return array<string, mixed>
@@ -134,6 +164,7 @@ final class ArrivalResultsReducerTest extends TestCase
         int $totalRaceTimeMs,
         array $laps,
         int $lastLapTimestampMs = 0,
+        ?int $startTimestampMs = null,
     ): array {
         return [
             'participantData' => [
@@ -146,6 +177,7 @@ final class ArrivalResultsReducerTest extends TestCase
             'lapCount' => $lapCount,
             'totalRaceTimeMs' => $totalRaceTimeMs,
             'lastLapTimestampMs' => $lastLapTimestampMs,
+            'startTimestampMs' => $startTimestampMs,
             'laps' => $laps,
         ];
     }
