@@ -1,0 +1,152 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Application\Arrival\Enums\ArrivalKind;
+use App\Support\ArrivalResultsReducer;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+final class ArrivalResultsReducerTest extends TestCase
+{
+    #[Test]
+    public function test_regular_arrival_sorts_by_lap_count_then_total_time(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 100_000,
+                laps: [['lapTimeMs' => 50_000], ['lapTimeMs' => 50_000]],
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 3,
+                totalRaceTimeMs: 200_000,
+                laps: [['lapTimeMs' => 60_000], ['lapTimeMs' => 70_000], ['lapTimeMs' => 70_000]],
+            ),
+            $this->participant(
+                id: 3,
+                lapCount: 2,
+                totalRaceTimeMs: 90_000,
+                laps: [['lapTimeMs' => 45_000], ['lapTimeMs' => 45_000]],
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Regular);
+
+        $this->assertSame(3, $result['last_lap_number']);
+        $this->assertSame([2, 3, 1], array_column($result['participants'], 'id'));
+        $this->assertSame([1, 2, 3], array_column($result['participants'], 'position'));
+        $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][0]);
+        $this->assertArrayNotHasKey('lastLapDeltaSec', $result['participants'][0]);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_sorts_by_best_lap_time(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 102_000,
+                laps: [['lapTimeMs' => 52_000], ['lapTimeMs' => 50_000]],
+                lastLapTimestampMs: 102_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 3,
+                totalRaceTimeMs: 145_000,
+                laps: [['lapTimeMs' => 48_000], ['lapTimeMs' => 49_000], ['lapTimeMs' => 48_000]],
+                lastLapTimestampMs: 145_000,
+            ),
+            $this->participant(
+                id: 3,
+                lapCount: 1,
+                totalRaceTimeMs: 47_500,
+                laps: [['lapTimeMs' => 47_500]],
+                lastLapTimestampMs: 47_500,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame(3, $result['last_lap_number']);
+        $this->assertSame([3, 2, 1], array_column($result['participants'], 'id'));
+        $this->assertSame([1, 2, 3], array_column($result['participants'], 'position'));
+        $this->assertSame(47_500, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(48_000, $result['participants'][1]['bestLapTimeMs']);
+        $this->assertSame(50_000, $result['participants'][2]['bestLapTimeMs']);
+        $this->assertSame(0, $result['participants'][0]['displayTimeMs']);
+        $this->assertSame(500, $result['participants'][1]['displayTimeMs']);
+        $this->assertSame(2_500, $result['participants'][2]['displayTimeMs']);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_includes_last_lap_delta_in_seconds(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 102_000,
+                laps: [['lapTimeMs' => 50_000], ['lapTimeMs' => 52_000]],
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 2,
+                totalRaceTimeMs: 98_000,
+                laps: [['lapTimeMs' => 49_000], ['lapTimeMs' => 49_000]],
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame(0.0, $result['participants'][0]['lastLapDeltaSec']);
+        $this->assertSame(2.0, $result['participants'][1]['lastLapDeltaSec']);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_returns_negative_last_lap_delta_when_last_lap_is_faster(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 98_000,
+                laps: [['lapTimeMs' => 52_000], ['lapTimeMs' => 46_000]],
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame(-6.0, $result['participants'][0]['lastLapDeltaSec']);
+        $this->assertSame(46_000, $result['participants'][0]['bestLapTimeMs']);
+    }
+
+    /**
+     * @param  array<int, array{lapTimeMs:int}>  $laps
+     * @return array<string, mixed>
+     */
+    private function participant(
+        int $id,
+        int $lapCount,
+        int $totalRaceTimeMs,
+        array $laps,
+        int $lastLapTimestampMs = 0,
+    ): array {
+        return [
+            'participantData' => [
+                'id' => $id,
+                'name' => "Rider{$id}",
+                'surname' => 'Test',
+                'patronymic' => '',
+                'start_number' => $id,
+            ],
+            'lapCount' => $lapCount,
+            'totalRaceTimeMs' => $totalRaceTimeMs,
+            'lastLapTimestampMs' => $lastLapTimestampMs,
+            'laps' => $laps,
+        ];
+    }
+}

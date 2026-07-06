@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Application\Arrival\Enums\ArrivalKind;
 use App\Models\Arrival;
+use App\Models\ArrivalType;
+use Database\Seeders\ArrivalTypeSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -19,6 +22,8 @@ final class ArrivalStreamCloseWithFinalResultsTest extends TestCase
             'hrono.api_secret' => 'test-secret',
             'hrono.moto_api_url' => 'https://moto.test/api/',
         ]);
+
+        $this->seed(ArrivalTypeSeeder::class);
     }
 
     public function test_it_closes_stream_without_final_results(): void
@@ -126,6 +131,10 @@ final class ArrivalStreamCloseWithFinalResultsTest extends TestCase
         ]);
         $previousArrival->forceFill(['moto_stream_opened_at' => now()])->save();
 
+        $regularTypeId = ArrivalType::query()
+            ->where('slug', ArrivalKind::Regular->value)
+            ->value('id');
+
         $newArrival = Arrival::query()->create([
             'name' => 'Заезд 2',
             'finished' => false,
@@ -133,6 +142,7 @@ final class ArrivalStreamCloseWithFinalResultsTest extends TestCase
             'time' => '11:00',
             'arrival_grades' => [],
             'moto_race_id' => 156,
+            'arrival_type_id' => $regularTypeId,
         ]);
 
         $this->postJson(
@@ -152,7 +162,8 @@ final class ArrivalStreamCloseWithFinalResultsTest extends TestCase
         $this->assertNull($newArrival->moto_stream_closed_at);
 
         Http::assertSent(static fn ($request) => $request->url() === 'https://moto.test/api/races/156/stream/open'
-            && $request['arrival_name'] === 'Заезд 2');
+            && $request['arrival_name'] === 'Заезд 2'
+            && $request['metadata']['arrival_type_id'] === $regularTypeId);
     }
 
     public function test_it_requires_moto_bearer_to_close_stream_when_saving_final_results(): void

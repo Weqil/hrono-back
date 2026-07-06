@@ -3,11 +3,10 @@
 namespace App\Application\Arrival\Actions;
 
 use App\Application\Arrival\Enums\ArrivalKind;
+use App\Application\Arrival\Support\ArrivalTypeResolver;
 use App\Models\Arrival;
-use App\Models\ArrivalType;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 final class CreateArrivalAction
 {
@@ -35,28 +34,15 @@ final class CreateArrivalAction
     /**
      * @param  array<string, mixed>  $data
      */
-    private function resolveArrivalTypeId(array $data): ?int
+    private function resolveArrivalTypeId(array $data): int
     {
-        if (isset($data['arrival_type_id'])) {
+        if (array_key_exists('arrival_type_id', $data) && $data['arrival_type_id'] !== null) {
             return (int) $data['arrival_type_id'];
         }
 
-        $kind = ArrivalKind::tryFromSlug($data['arrival_type'] ?? null);
+        $kind = ArrivalKind::tryFromSlug($data['arrival_type'] ?? null)
+            ?? ArrivalKind::Regular;
 
-        if ($kind === null) {
-            return null;
-        }
-
-        $typeId = ArrivalType::query()
-            ->where('slug', $kind->value)
-            ->value('id');
-
-        if ($typeId === null) {
-            throw ValidationException::withMessages([
-                'arrival_type' => __('arrivals.arrival_type_not_found'),
-            ]);
-        }
-
-        return (int) $typeId;
+        return ArrivalTypeResolver::idFor($kind);
     }
 }

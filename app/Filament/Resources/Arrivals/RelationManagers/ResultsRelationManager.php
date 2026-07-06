@@ -3,12 +3,15 @@
 namespace App\Filament\Resources\Arrivals\RelationManagers;
 
 use App\Application\Arrival\Actions\RecalculateArrivalResultPlacesAction;
+use App\Application\Arrival\Actions\RecalculateArrivalResultPlacesByBestLapAction;
 use App\Filament\Support\RaceTimeForm;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
@@ -30,6 +33,11 @@ class ResultsRelationManager extends RelationManager
                     ->required(),
                 TextInput::make('surname')
                     ->label('Фамилия'),
+                TextInput::make('place')
+                    ->label('Место')
+                    ->required()
+                    ->numeric()
+                    ->minValue(1),
                 TextInput::make('start_number')
                     ->label('Стартовый номер')
                     ->required()
@@ -62,24 +70,50 @@ class ResultsRelationManager extends RelationManager
                 TextColumn::make('total_laps')
                     ->label('Кругов'),
                 RaceTimeForm::totalTimeMsColumn(),
+                RaceTimeForm::totalTimeMsColumn('best_lap_time_ms', 'Лучший круг'),
                 TextColumn::make('laps_count')
                     ->label('Кругов в БД')
                     ->counts('laps'),
             ])
             ->headerActions([
-                CreateAction::make()
-                    ->after(fn () => $this->recalculatePlaces()),
+                Action::make('recalculatePlaces')
+                    ->label('Пересчитать места')
+                    ->icon('heroicon-o-arrow-path')
+                    ->visible(fn (): bool => $this->getOwnerRecord()->isRegular())
+                    ->requiresConfirmation()
+                    ->modalHeading('Пересчитать места?')
+                    ->modalDescription('Места будут назначены по общему времени: меньше время — выше место.')
+                    ->action(function (): void {
+                        $this->recalculatePlaces();
+
+                        Notification::make()
+                            ->title('Места пересчитаны')
+                            ->success()
+                            ->send();
+                    }),
+                Action::make('recalculatePlacesByBestLap')
+                    ->label('Пересчитать по лучшему кругу')
+                    ->icon('heroicon-o-bolt')
+                    ->requiresConfirmation()
+                    ->modalHeading('Пересчитать по лучшему кругу?')
+                    ->modalDescription('Лучший круг пересчитается без учёта первого круга, места назначатся по лучшему кругу: быстрее круг — выше место.')
+                    ->action(function (): void {
+                        $this->recalculatePlacesByBestLap();
+
+                        Notification::make()
+                            ->title('Места пересчитаны по лучшему кругу')
+                            ->success()
+                            ->send();
+                    }),
+                CreateAction::make(),
             ])
             ->recordActions([
-                EditAction::make()
-                    ->after(fn () => $this->recalculatePlaces()),
-                DeleteAction::make()
-                    ->after(fn () => $this->recalculatePlaces()),
+                EditAction::make(),
+                DeleteAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make()
-                        ->after(fn () => $this->recalculatePlaces()),
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -87,5 +121,10 @@ class ResultsRelationManager extends RelationManager
     private function recalculatePlaces(): void
     {
         app(RecalculateArrivalResultPlacesAction::class)($this->getOwnerRecord()->getKey());
+    }
+
+    private function recalculatePlacesByBestLap(): void
+    {
+        app(RecalculateArrivalResultPlacesByBestLapAction::class)($this->getOwnerRecord()->getKey());
     }
 }

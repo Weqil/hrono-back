@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Arrival;
 use App\Models\ArrivalResult;
+use App\Models\ArrivalType;
 
 final class ArrivalFinalResultsPresenter
 {
@@ -15,7 +16,7 @@ final class ArrivalFinalResultsPresenter
     /**
      * @return array<string, mixed>|null
      */
-    public static function present(Arrival $arrival): ?array
+    public static function present(Arrival $arrival, ?ArrivalType $untypedFallback = null): ?array
     {
         if (! self::canPresent($arrival)) {
             return null;
@@ -31,11 +32,7 @@ final class ArrivalFinalResultsPresenter
             'finished_at_ms' => $arrival->finished_at->getTimestampMs(),
             'name' => $arrival->name,
             'time' => $arrival->time,
-            'arrival_type' => $arrival->arrivalType ? [
-                'id' => $arrival->arrivalType->id,
-                'name' => $arrival->arrivalType->name,
-                'slug' => $arrival->arrivalType->slug->value,
-            ] : null,
+            'arrival_type' => self::presentArrivalType($arrival, $untypedFallback),
             'results' => $arrival->results->map(static function (ArrivalResult $result): array {
                 return [
                     'place' => $result->place,
@@ -61,6 +58,24 @@ final class ArrivalFinalResultsPresenter
                     ])->values()->all(),
                 ];
             })->values()->all(),
+        ];
+    }
+
+    /**
+     * @return array{id: int, name: string, slug: string}|null
+     */
+    private static function presentArrivalType(Arrival $arrival, ?ArrivalType $untypedFallback): ?array
+    {
+        $arrivalType = $arrival->arrivalType ?? $untypedFallback;
+
+        if ($arrivalType === null) {
+            return null;
+        }
+
+        return [
+            'id' => $arrivalType->id,
+            'name' => $arrivalType->name,
+            'slug' => $arrivalType->slug->value,
         ];
     }
 }

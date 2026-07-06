@@ -26,6 +26,10 @@ Route::middleware('api.secret')->group(function (): void {
     Route::post('arrivals/{id}/results', ArrivalController::class)
         ->name('arrivals.results.store');
 
+    Route::get('races/{id}/final-results/type/{arrivalTypeFilter}', GetRaceFinalResultsController::class)
+        ->where('arrivalTypeFilter', '[0-9]+|qualification|regular')
+        ->name('races.final-results.show-by-type');
+
     Route::get('races/{id}/final-results', GetRaceFinalResultsController::class)
         ->name('races.final-results.show');
 

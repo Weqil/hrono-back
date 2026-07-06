@@ -58,7 +58,12 @@ final class OpenArrivalStreamAction
         }
 
         try {
-            $this->openRaceStream->execute($arrival->moto_race_id, $bearer, $arrival->name);
+            $this->openRaceStream->execute(
+                $arrival->moto_race_id,
+                $bearer,
+                $arrival->name,
+                $arrival->arrival_type_id,
+            );
         } catch (RequestException $e) {
             Log::channel('info')->error('arrivals.stream.open_failed', [
                 'arrival_id' => $arrivalId,

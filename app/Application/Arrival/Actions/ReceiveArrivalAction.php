@@ -70,7 +70,9 @@ final class ReceiveArrivalAction
             return;
         }
 
-        $reduced = ArrivalResultsReducer::reduce($request->json()->all());
+        $arrival->loadMissing('arrivalType');
+
+        $reduced = ArrivalResultsReducer::reduce($request->json()->all(), $arrival->kind());
 
         $streamOpenedAtMs = $arrival->moto_stream_opened_at?->getTimestampMs();
 
@@ -78,6 +80,7 @@ final class ReceiveArrivalAction
             'arrival_meta' => [
                 'race_id' => $arrival->moto_race_id,
                 'arrival_name' => $arrival->name,
+                'arrival_type_id' => $arrival->arrival_type_id,
                 'last_lap_number' => $reduced['last_lap_number'],
                 'stream_opened_at' => $streamOpenedAtMs,
             ],

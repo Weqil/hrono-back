@@ -42,4 +42,25 @@ final class CreateArrivalWithTypeTest extends TestCase
         $this->assertNotNull($type);
         $this->assertSame($type->id, $arrival->arrival_type_id);
     }
+
+    public function test_it_defaults_arrival_type_to_regular_when_not_specified(): void
+    {
+        $response = $this->postJson('/arrivals', [
+            'moto_race_id' => 15,
+            'name' => 'Заезд',
+            'time' => '10:00',
+        ], [
+            'X-Api-Secret' => 'test-secret',
+        ]);
+
+        $response->assertCreated();
+
+        $arrival = Arrival::query()->first();
+        $regularTypeId = ArrivalType::query()
+            ->where('slug', ArrivalKind::Regular->value)
+            ->value('id');
+
+        $this->assertNotNull($arrival);
+        $this->assertSame($regularTypeId, $arrival->arrival_type_id);
+    }
 }

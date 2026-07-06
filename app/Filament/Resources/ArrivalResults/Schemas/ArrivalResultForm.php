@@ -16,6 +16,11 @@ class ArrivalResultForm
                 Select::make('arrival_id')
                     ->relationship('arrival', 'name')
                     ->required(),
+                TextInput::make('place')
+                    ->label('Место')
+                    ->required()
+                    ->numeric()
+                    ->minValue(1),
                 TextInput::make('server_race_id')
                     ->required()
                     ->numeric(),
