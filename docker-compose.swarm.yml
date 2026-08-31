@@ -1,6 +1,6 @@
 # Образы:
-#   app:   weqil/hrono-app:1.0.16
-#   nginx: weqil/hrono-nginx:1.0.16
+#   app:   weqil/hrono-app:1.0.19
+#   nginx: weqil/hrono-nginx:1.0.19
 # Сборка с Mac: только --platform linux/amd64 (иначе unsupported platform в Swarm).
 #   docker build --platform linux/amd64 -t weqil/hrono-app:TAG -f Dockerfile .
 #   docker build --platform linux/amd64 -t weqil/hrono-nginx:TAG -f docker/nginx/Dockerfile .
@@ -26,7 +26,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.16
+    image: weqil/hrono-app:1.0.19
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -60,7 +60,7 @@ services:
         delay: 5s
 
   nginx:
-    image: weqil/hrono-nginx:1.0.16
+    image: weqil/hrono-nginx:1.0.19
     ports:
       - "${APP_PORT:-8081}:80"
     volumes:

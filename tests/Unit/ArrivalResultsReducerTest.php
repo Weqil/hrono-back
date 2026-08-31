@@ -38,8 +38,42 @@ final class ArrivalResultsReducerTest extends TestCase
         $this->assertSame(3, $result['last_lap_number']);
         $this->assertSame([2, 3, 1], array_column($result['participants'], 'id'));
         $this->assertSame([1, 2, 3], array_column($result['participants'], 'position'));
+        $this->assertSame(['pending', 'pending', 'pending'], array_column($result['participants'], 'status'));
+        $this->assertSame([null, null, null], array_column($result['participants'], 'finishElapsedMs'));
         $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][0]);
         $this->assertArrayNotHasKey('lastLapDeltaSec', $result['participants'][0]);
+    }
+
+    #[Test]
+    public function test_regular_arrival_forwards_participant_status_and_finish_elapsed(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 100_000,
+                laps: [['lapTimeMs' => 50_000], ['lapTimeMs' => 50_000]],
+                status: 'finished',
+                finishElapsedMs: 100_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 1,
+                totalRaceTimeMs: 55_000,
+                laps: [['lapTimeMs' => 55_000]],
+                status: 'pending',
+                finishElapsedMs: null,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Regular);
+
+        $this->assertSame(1, $result['participants'][0]['id']);
+        $this->assertSame('finished', $result['participants'][0]['status']);
+        $this->assertSame(100_000, $result['participants'][0]['finishElapsedMs']);
+        $this->assertSame(2, $result['participants'][1]['id']);
+        $this->assertSame('pending', $result['participants'][1]['status']);
+        $this->assertNull($result['participants'][1]['finishElapsedMs']);
     }
 
     #[Test]
@@ -165,6 +199,8 @@ final class ArrivalResultsReducerTest extends TestCase
         array $laps,
         int $lastLapTimestampMs = 0,
         ?int $startTimestampMs = null,
+        string $status = 'pending',
+        ?int $finishElapsedMs = null,
     ): array {
         return [
             'participantData' => [
@@ -173,6 +209,8 @@ final class ArrivalResultsReducerTest extends TestCase
                 'surname' => 'Test',
                 'patronymic' => '',
                 'start_number' => $id,
+                'status' => $status,
+                'finishElapsedMs' => $finishElapsedMs,
             ],
             'lapCount' => $lapCount,
             'totalRaceTimeMs' => $totalRaceTimeMs,

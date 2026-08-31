@@ -25,6 +25,7 @@ final class ArrivalResultsReducer
      */
     private static function reduceRegular(array $items): array
     {
+        $positionDeltaById = self::positionDeltaByParticipantId($items);
         $processedParticipants = [];
         $overallMaxLapNumber = 0;
 
@@ -79,14 +80,18 @@ final class ArrivalResultsReducer
             }
 
             $pData = $participant['participantData'];
+            $participantId = (int) ($pData['id'] ?? 0);
             $finalParticipants[] = [
                 'id' => $pData['id'] ?? null,
                 'lapCount' => $participant['last_lap_number'],
                 'lastLapTimestampMs' => $participant['last_lap_timestamp_ms'],
                 'totalRaceTimeMs' => $participant['total_race_time_ms'],
                 'position' => 0,
+                'position_delta' => self::resolvePositionDelta($positionDeltaById, $participantId),
                 'displayTimeMs' => $displayTimeMs,
                 'laps_behind' => $lapDiff,
+                'status' => self::resolveStatus($pData),
+                'finishElapsedMs' => self::resolveFinishElapsedMs($pData),
                 'participantData' => self::participantData($pData),
             ];
         }
@@ -122,6 +127,7 @@ final class ArrivalResultsReducer
      */
     private static function reduceQualification(array $items): array
     {
+        $positionDeltaById = self::positionDeltaByParticipantId($items);
         $processedParticipants = [];
         $overallMaxLapNumber = 0;
 
@@ -200,6 +206,8 @@ final class ArrivalResultsReducer
         foreach ($processedParticipants as $participant) {
             $pData = $participant['participantData'];
 
+            $participantId = (int) ($pData['id'] ?? 0);
+
             if (! empty($participant['has_started_only'])) {
                 $finalParticipants[] = [
                     'id' => $pData['id'] ?? null,
@@ -207,9 +215,12 @@ final class ArrivalResultsReducer
                     'lastLapTimestampMs' => $participant['last_lap_timestamp_ms'],
                     'totalRaceTimeMs' => $participant['total_race_time_ms'],
                     'position' => 0,
+                    'position_delta' => self::resolvePositionDelta($positionDeltaById, $participantId),
                     'displayTimeMs' => 0,
                     'lastLapDeltaSec' => 0.0,
                     'laps_behind' => 0,
+                    'status' => self::resolveStatus($pData),
+                    'finishElapsedMs' => self::resolveFinishElapsedMs($pData),
                     'participantData' => self::participantData($pData),
                 ];
 
@@ -225,9 +236,12 @@ final class ArrivalResultsReducer
                 'totalRaceTimeMs' => $participant['total_race_time_ms'],
                 'bestLapTimeMs' => $participant['best_lap_time_ms'],
                 'position' => 0,
+                'position_delta' => self::resolvePositionDelta($positionDeltaById, $participantId),
                 'displayTimeMs' => $participant['best_lap_time_ms'] - $leaderBestLapTimeMs,
                 'lastLapDeltaSec' => round($lastLapDeltaMs / 1000, 3),
                 'laps_behind' => 0,
+                'status' => self::resolveStatus($pData),
+                'finishElapsedMs' => self::resolveFinishElapsedMs($pData),
                 'participantData' => self::participantData($pData),
             ];
         }
@@ -265,6 +279,65 @@ final class ArrivalResultsReducer
             'last_lap_number' => $overallMaxLapNumber,
             'participants' => $finalParticipants,
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $items
+     * @return array<int, int|null>
+     */
+    private static function positionDeltaByParticipantId(array $items): array
+    {
+        $positionDeltaById = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item) || ! array_key_exists('position_delta', $item)) {
+                continue;
+            }
+
+            $participantId = (int) ($item['id'] ?? $item['participantData']['id'] ?? 0);
+            if ($participantId <= 0) {
+                continue;
+            }
+
+            $positionDeltaById[$participantId] = $item['position_delta'];
+        }
+
+        return $positionDeltaById;
+    }
+
+    /**
+     * @param  array<int, int|null>  $positionDeltaById
+     */
+    private static function resolvePositionDelta(array $positionDeltaById, int $participantId): ?int
+    {
+        if ($participantId <= 0 || ! array_key_exists($participantId, $positionDeltaById)) {
+            return null;
+        }
+
+        $value = $positionDeltaById[$participantId];
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $pData
+     * @return 'pending'|'finished'
+     */
+    private static function resolveStatus(array $pData): string
+    {
+        return ($pData['status'] ?? null) === 'finished' ? 'finished' : 'pending';
+    }
+
+    /**
+     * @param  array<string, mixed>  $pData
+     */
+    private static function resolveFinishElapsedMs(array $pData): ?int
+    {
+        if (! array_key_exists('finishElapsedMs', $pData) || $pData['finishElapsedMs'] === null) {
+            return null;
+        }
+
+        return is_numeric($pData['finishElapsedMs']) ? (int) $pData['finishElapsedMs'] : null;
     }
 
     /**

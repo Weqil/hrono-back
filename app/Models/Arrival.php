@@ -86,4 +86,26 @@ class Arrival extends Model
         return $this->moto_stream_opened_at !== null
             && $this->moto_stream_closed_at === null;
     }
+
+    /**
+     * Whether this arrival holds the current open Moto stream for its race.
+     * Moto stream is per race — only the latest open arrival is active.
+     */
+    public function isCurrentMotoStream(): bool
+    {
+        if (! $this->canCloseMotoStream()) {
+            return false;
+        }
+
+        $activeArrivalId = static::query()
+            ->where('moto_race_id', $this->moto_race_id)
+            ->whereNotNull('moto_stream_opened_at')
+            ->whereNull('moto_stream_closed_at')
+            ->orderByDesc('moto_stream_opened_at')
+            ->orderByDesc('id')
+            ->value('id');
+
+        return $activeArrivalId !== null
+            && (int) $activeArrivalId === (int) $this->getKey();
+    }
 }

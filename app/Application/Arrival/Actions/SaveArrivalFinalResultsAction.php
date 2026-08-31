@@ -59,9 +59,12 @@ final class SaveArrivalFinalResultsAction
             return SaveArrivalFinalResultsOutcome::RaceIdMismatch;
         }
 
+        // Same rule as stream/close: Motо is closed only when this arrival is the current
+        // active stream for the race. Bearer is required only for that Motо call.
         $shouldCloseStream = $arrival->canCloseMotoStream();
+        $shouldCloseMotoStream = $shouldCloseStream && $arrival->isCurrentMotoStream();
 
-        if ($shouldCloseStream && MotoBearerExtractor::fromRequest($request) === null) {
+        if ($shouldCloseMotoStream && MotoBearerExtractor::fromRequest($request) === null) {
             return SaveArrivalFinalResultsOutcome::StreamBearerMissing;
         }
 
@@ -109,6 +112,7 @@ final class SaveArrivalFinalResultsAction
             return SaveArrivalFinalResultsOutcome::Saved;
         }
 
+        // CloseArrivalStreamAction itself refuses Motо close when another arrival is active.
         return match ($this->closeArrivalStream->execute($arrivalId, $request)) {
             CloseArrivalStreamOutcome::Closed => SaveArrivalFinalResultsOutcome::Saved,
             CloseArrivalStreamOutcome::MotoFailed => SaveArrivalFinalResultsOutcome::StreamCloseFailed,
