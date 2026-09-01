@@ -235,6 +235,7 @@ final class ArrivalResultsReducer
                 'lastLapTimestampMs' => $participant['last_lap_timestamp_ms'],
                 'totalRaceTimeMs' => $participant['total_race_time_ms'],
                 'bestLapTimeMs' => $participant['best_lap_time_ms'],
+                'lastLapTimeMs' => $participant['last_lap_time_ms'],
                 'position' => 0,
                 'position_delta' => self::resolvePositionDelta($positionDeltaById, $participantId),
                 'displayTimeMs' => $participant['best_lap_time_ms'] - $leaderBestLapTimeMs,

@@ -81,6 +81,7 @@ final class ReceiveArrivalAction
                 'race_id' => $arrival->moto_race_id,
                 'arrival_name' => $arrival->name,
                 'arrival_type_id' => $arrival->arrival_type_id,
+                'arrival_type_slug' => $arrival->kind()?->value,
                 'last_lap_number' => $reduced['last_lap_number'],
                 'stream_opened_at' => $streamOpenedAtMs,
             ],

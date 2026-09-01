@@ -109,8 +109,11 @@ final class ArrivalResultsReducerTest extends TestCase
         $this->assertSame([3, 2, 1], array_column($result['participants'], 'id'));
         $this->assertSame([1, 2, 3], array_column($result['participants'], 'position'));
         $this->assertSame(47_500, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(47_500, $result['participants'][0]['lastLapTimeMs']);
         $this->assertSame(48_000, $result['participants'][1]['bestLapTimeMs']);
+        $this->assertSame(48_000, $result['participants'][1]['lastLapTimeMs']);
         $this->assertSame(50_000, $result['participants'][2]['bestLapTimeMs']);
+        $this->assertSame(50_000, $result['participants'][2]['lastLapTimeMs']);
         $this->assertSame(0, $result['participants'][0]['displayTimeMs']);
         $this->assertSame(500, $result['participants'][1]['displayTimeMs']);
         $this->assertSame(2_500, $result['participants'][2]['displayTimeMs']);
