@@ -191,8 +191,92 @@ final class ArrivalResultsReducerTest extends TestCase
         $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][1]);
     }
 
+    #[Test]
+    public function test_qualification_arrival_excludes_manual_and_following_lap_from_best_lap(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 4,
+                totalRaceTimeMs: 246_000,
+                laps: [
+                    ['lapTimeMs' => 65_000, 'timestampMs' => 65_000, 'isManual' => false],
+                    ['lapTimeMs' => 62_000, 'timestampMs' => 127_000, 'isManual' => true],
+                    ['lapTimeMs' => 61_000, 'timestampMs' => 188_000, 'isManual' => false],
+                    ['lapTimeMs' => 58_000, 'timestampMs' => 246_000, 'isManual' => false],
+                ],
+                lastLapTimestampMs: 246_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame(58_000, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(58_000, $result['participants'][0]['lastLapTimeMs']);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_demotes_rider_without_eligible_best_lap(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 123_000,
+                laps: [
+                    ['lapTimeMs' => 62_000, 'timestampMs' => 62_000, 'isManual' => true],
+                    ['lapTimeMs' => 61_000, 'timestampMs' => 123_000, 'isManual' => false],
+                ],
+                lastLapTimestampMs: 123_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 1,
+                totalRaceTimeMs: 65_000,
+                laps: [['lapTimeMs' => 65_000, 'timestampMs' => 65_000, 'isManual' => false]],
+                lastLapTimestampMs: 65_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame([2, 1], array_column($result['participants'], 'id'));
+        $this->assertSame(65_000, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][1]);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_manual_lap_does_not_steal_first_place(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 109_000,
+                laps: [
+                    ['lapTimeMs' => 65_000, 'timestampMs' => 65_000, 'isManual' => false],
+                    ['lapTimeMs' => 44_000, 'timestampMs' => 109_000, 'isManual' => true],
+                ],
+                lastLapTimestampMs: 109_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 1,
+                totalRaceTimeMs: 47_000,
+                laps: [['lapTimeMs' => 47_000, 'timestampMs' => 47_000, 'isManual' => false]],
+                lastLapTimestampMs: 47_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame([2, 1], array_column($result['participants'], 'id'));
+        $this->assertSame(47_000, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(65_000, $result['participants'][1]['bestLapTimeMs']);
+    }
+
     /**
-     * @param  array<int, array{lapTimeMs:int}>  $laps
+     * @param  array<int, array<string, mixed>>  $laps
      * @return array<string, mixed>
      */
     private function participant(

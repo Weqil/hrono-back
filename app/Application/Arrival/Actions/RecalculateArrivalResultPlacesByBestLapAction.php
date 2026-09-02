@@ -4,6 +4,7 @@ namespace App\Application\Arrival\Actions;
 
 use App\Models\Arrival;
 use App\Models\ArrivalResult;
+use App\Support\QualificationBestLap;
 
 final class RecalculateArrivalResultPlacesByBestLapAction
 {
@@ -44,14 +45,22 @@ final class RecalculateArrivalResultPlacesByBestLapAction
     }
 
     /**
-     * Лучший круг без учёта первого круга (lap_number = 1).
+     * Лучший круг с учётом ручных отметок и круга сразу после них.
      */
     private static function bestLapTimeMs(ArrivalResult $result): int
     {
-        return (int) $result->laps
-            ->where('lap_number', '>', 1)
-            ->where('lap_time_ms', '>', 0)
-            ->min('lap_time_ms');
+        $laps = $result->laps
+            ->sortBy('lap_number')
+            ->map(static fn ($lap): array => [
+                'lap_number' => $lap->lap_number,
+                'lap_time_ms' => $lap->lap_time_ms,
+                'timestamp_ms' => $lap->timestamp_ms,
+                'is_manual' => $lap->is_manual,
+            ])
+            ->values()
+            ->all();
+
+        return QualificationBestLap::getBestLapTimeMs($laps) ?? 0;
     }
 
     private static function sortableBestLap(ArrivalResult $result): int
