@@ -14,4 +14,10 @@ return [
     */
     'moto_api_url' => env('MOTO_API_URL', ''),
 
+    /*
+    | Автозакрытие трансляции: opened_at + duration(arrival.time) + grace.
+    | Если за это время стрим не закрыли (нет close / final-results) — закрываем сами.
+    */
+    'stream_auto_close_grace_minutes' => (int) env('STREAM_AUTO_CLOSE_GRACE_MINUTES', 10),
+
 ];

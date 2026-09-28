@@ -18,6 +18,7 @@ final class ReceiveArrivalAction
     public function __construct(
         private readonly SendRaceResultsToMotoAction $sendResultsToMoto,
         private readonly OpenArrivalStreamAction $openArrivalStream,
+        private readonly AutoCloseArrivalStreamAction $autoCloseArrivalStream,
     ) {}
 
     public function execute(string $id, Request $request): void
@@ -39,22 +40,40 @@ final class ReceiveArrivalAction
             return;
         }
 
+        if ($arrival->isStreamAutoCloseDue()) {
+            $this->autoCloseArrivalStream->execute($arrival);
+            $arrival->refresh();
+        }
+
+        $arrival->forceFill(['last_live_results_at' => now()])->save();
+
+        if ($arrival->canOpenMotoStream()) {
+            $outcome = $this->openArrivalStream->execute($id, $request);
+
+            if ($outcome === OpenArrivalStreamOutcome::Opened) {
+                $arrival->refresh();
+            } else {
+                Log::channel('info')->warning('arrivals.results.stream_open_skipped', [
+                    'arrival_id' => $id,
+                    'reason' => $outcome->name,
+                ]);
+            }
+        }
+
+        if (! $arrival->canForwardLiveResultsToMoto()) {
+            Log::channel('info')->warning('arrivals.results.moto_forward_skipped', [
+                'arrival_id' => $id,
+                'moto_race_id' => $arrival->moto_race_id,
+                'reason' => 'stale_or_inactive_arrival',
+                'stream_closed_at' => $arrival->moto_stream_closed_at,
+                'stream_auto_close_at' => $arrival->stream_auto_close_at,
+                'has_final_results' => $arrival->hasFinalResults(),
+            ]);
+
+            return;
+        }
+
         $this->forwardResultsToMoto($id, $arrival, $request);
-
-        if (! $arrival->canOpenMotoStream()) {
-            return;
-        }
-
-        $outcome = $this->openArrivalStream->execute($id, $request);
-
-        if ($outcome === OpenArrivalStreamOutcome::Opened) {
-            return;
-        }
-
-        Log::channel('info')->warning('arrivals.results.stream_open_skipped', [
-            'arrival_id' => $id,
-            'reason' => $outcome->name,
-        ]);
     }
 
     private function forwardResultsToMoto(string $arrivalId, Arrival $arrival, Request $request): void
@@ -84,6 +103,7 @@ final class ReceiveArrivalAction
                 'arrival_type_slug' => $arrival->kind()?->value,
                 'last_lap_number' => $reduced['last_lap_number'],
                 'stream_opened_at' => $streamOpenedAtMs,
+                'stream_id' => $arrival->moto_stream_id,
             ],
             'participants' => $reduced['participants'],
         ];

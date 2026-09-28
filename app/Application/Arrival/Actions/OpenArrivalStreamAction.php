@@ -5,7 +5,9 @@ namespace App\Application\Arrival\Actions;
 use App\Application\Arrival\Enums\CloseArrivalStreamOutcome;
 use App\Application\Arrival\Enums\OpenArrivalStreamOutcome;
 use App\Application\Moto\Actions\OpenRaceStreamAction;
+use App\Jobs\AutoCloseArrivalStreamJob;
 use App\Models\Arrival;
+use App\Support\ArrivalStreamAutoClose;
 use App\Support\MotoBearerExtractor;
 use App\Support\RequestTimeParser;
 use Illuminate\Http\Client\RequestException;
@@ -54,11 +56,12 @@ final class OpenArrivalStreamAction
             $arrival->forceFill([
                 'moto_stream_opened_at' => null,
                 'moto_stream_closed_at' => null,
+                'moto_stream_id' => null,
             ])->save();
         }
 
         try {
-            $this->openRaceStream->execute(
+            $motoOpen = $this->openRaceStream->execute(
                 $arrival->moto_race_id,
                 $bearer,
                 $arrival->name,
@@ -82,11 +85,21 @@ final class OpenArrivalStreamAction
             return OpenArrivalStreamOutcome::MotoFailed;
         }
 
-        $openedAt = RequestTimeParser::fromRequest($request) ?? now();
+        $openedAt = $motoOpen['stream_opened_at']
+            ?? RequestTimeParser::fromRequest($request)
+            ?? now();
+        $autoCloseAt = ArrivalStreamAutoClose::dueAt($arrival, $openedAt);
+
         $arrival->forceFill([
             'moto_stream_opened_at' => $openedAt,
             'moto_stream_closed_at' => null,
+            'moto_stream_id' => $motoOpen['stream_id'],
+            'stream_auto_close_at' => $autoCloseAt,
+            'moto_stream_bearer' => $bearer,
         ])->save();
+
+        AutoCloseArrivalStreamJob::dispatch($arrival->getKey())
+            ->delay($autoCloseAt);
 
         return OpenArrivalStreamOutcome::Opened;
     }

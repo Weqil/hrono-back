@@ -36,6 +36,10 @@ class Arrival extends Model
             'finished_at' => 'datetime',
             'moto_stream_opened_at' => 'datetime',
             'moto_stream_closed_at' => 'datetime',
+            'moto_stream_id' => 'string',
+            'stream_auto_close_at' => 'datetime',
+            'moto_stream_bearer' => 'encrypted',
+            'last_live_results_at' => 'datetime',
         ];
     }
 
@@ -107,5 +111,48 @@ class Arrival extends Model
 
         return $activeArrivalId !== null
             && (int) $activeArrivalId === (int) $this->getKey();
+    }
+
+    public function isStreamAutoCloseDue(?\DateTimeInterface $now = null): bool
+    {
+        if ($this->stream_auto_close_at === null || ! $this->canCloseMotoStream()) {
+            return false;
+        }
+
+        $now = $now ?? now();
+
+        return $this->stream_auto_close_at->lessThanOrEqualTo($now);
+    }
+
+    /**
+     * Live results may be forwarded only for the active (or not-yet-opened) arrival.
+     * Blocks closed / finished / expired / superseded arrivals so delayed checkpoint
+     * packets cannot overwrite another heat on the same moto race.
+     */
+    public function canForwardLiveResultsToMoto(?\DateTimeInterface $now = null): bool
+    {
+        if ($this->moto_stream_closed_at !== null) {
+            return false;
+        }
+
+        if ($this->hasFinalResults()) {
+            return false;
+        }
+
+        if ($this->stream_auto_close_at !== null) {
+            $now = $now ?? now();
+            if ($this->stream_auto_close_at->lessThanOrEqualTo($now)) {
+                return false;
+            }
+        }
+
+        $otherActiveExists = static::query()
+            ->where('moto_race_id', $this->moto_race_id)
+            ->whereKeyNot($this->getKey())
+            ->whereNotNull('moto_stream_opened_at')
+            ->whereNull('moto_stream_closed_at')
+            ->exists();
+
+        return ! $otherActiveExists;
     }
 }

@@ -5,28 +5,24 @@ namespace App\Application\Arrival\Actions;
 use App\Application\Arrival\Enums\CloseArrivalStreamOutcome;
 use App\Application\Moto\Actions\CloseRaceStreamAction;
 use App\Models\Arrival;
-use App\Support\MotoBearerExtractor;
-use App\Support\RequestTimeParser;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Закрывает трансляцию в Moto. Не сохраняет и не изменяет финальные результаты.
+ * Closes an open stream after race duration + grace when nobody closed it.
  */
-final class CloseArrivalStreamAction
+final class AutoCloseArrivalStreamAction
 {
     public function __construct(
         private readonly CloseRaceStreamAction $closeRaceStream,
     ) {}
 
-    /**
-     * Закрывает трансляцию в Moto. Не сохраняет финальные результаты заезда.
-     */
-    public function execute(string $arrivalId, Request $request): CloseArrivalStreamOutcome
+    public function execute(Arrival|string|int $arrival): CloseArrivalStreamOutcome
     {
-        $arrival = Arrival::query()->find($arrivalId);
+        if (! $arrival instanceof Arrival) {
+            $arrival = Arrival::query()->find($arrival);
+        }
 
         if ($arrival === null) {
             return CloseArrivalStreamOutcome::ArrivalNotFound;
@@ -40,27 +36,35 @@ final class CloseArrivalStreamAction
             return CloseArrivalStreamOutcome::NotOpened;
         }
 
-        $closedAt = RequestTimeParser::fromRequest($request) ?? now();
+        if (! $arrival->isStreamAutoCloseDue()) {
+            return CloseArrivalStreamOutcome::NotOpened;
+        }
 
-        // Moto stream is per race: close it only when this arrival is the current active one.
-        // If another arrival holds the open stream, do not call Moto — only clear a stale local flag.
+        $closedAt = now();
+
         if (! $arrival->isCurrentMotoStream()) {
             $this->markClosedLocally($arrival, $closedAt);
 
             return CloseArrivalStreamOutcome::Closed;
         }
 
-        $bearer = MotoBearerExtractor::fromRequest($request);
+        $bearer = $arrival->moto_stream_bearer;
 
-        if ($bearer === null) {
-            return CloseArrivalStreamOutcome::BearerMissing;
+        if (! is_string($bearer) || $bearer === '') {
+            Log::channel('info')->warning('arrivals.stream.auto_close_local_only', [
+                'arrival_id' => $arrival->getKey(),
+                'reason' => 'bearer_missing',
+            ]);
+            $this->markClosedLocally($arrival, $closedAt);
+
+            return CloseArrivalStreamOutcome::Closed;
         }
 
         try {
             $this->closeRaceStream->execute($arrival->moto_race_id, $bearer);
         } catch (RequestException $e) {
-            Log::channel('info')->error('arrivals.stream.close_failed', [
-                'arrival_id' => $arrivalId,
+            Log::channel('info')->error('arrivals.stream.auto_close_failed', [
+                'arrival_id' => $arrival->getKey(),
                 'moto_race_id' => $arrival->moto_race_id,
                 'status' => $e->response?->status(),
                 'body' => $e->response?->json() ?? $e->response?->body(),
@@ -68,8 +72,8 @@ final class CloseArrivalStreamAction
 
             return CloseArrivalStreamOutcome::MotoFailed;
         } catch (RuntimeException $e) {
-            Log::channel('info')->error('arrivals.stream.close_failed', [
-                'arrival_id' => $arrivalId,
+            Log::channel('info')->error('arrivals.stream.auto_close_failed', [
+                'arrival_id' => $arrival->getKey(),
                 'message' => $e->getMessage(),
             ]);
 
@@ -77,6 +81,11 @@ final class CloseArrivalStreamAction
         }
 
         $this->markClosedLocally($arrival, $closedAt);
+
+        Log::channel('info')->info('arrivals.stream.auto_closed', [
+            'arrival_id' => $arrival->getKey(),
+            'moto_race_id' => $arrival->moto_race_id,
+        ]);
 
         return CloseArrivalStreamOutcome::Closed;
     }

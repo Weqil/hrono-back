@@ -10,9 +10,13 @@ use RuntimeException;
 final class SendRaceResultsToMotoAction
 {
     /**
+     * Forwards live results. HTTP 409 (stale/closed stream) is treated as ignored — not an error.
+     *
+     * @return 'forwarded'|'ignored'
+     *
      * @throws RequestException
      */
-    public function execute(int $raceId, string $bearerToken, string $jsonBody): void
+    public function execute(int $raceId, string $bearerToken, string $jsonBody): string
     {
         $baseUrl = rtrim((string) config('hrono.moto_api_url'), '/');
 
@@ -33,6 +37,18 @@ final class SendRaceResultsToMotoAction
             'body' => $response->json() ?? $response->body(),
         ]);
 
+        if ($response->status() === 409) {
+            Log::channel('info')->info('moto.results.ignored', [
+                'race_id' => $raceId,
+                'reason' => 'stream_closed_or_stale',
+                'body' => $response->json() ?? $response->body(),
+            ]);
+
+            return 'ignored';
+        }
+
         $response->throw();
+
+        return 'forwarded';
     }
 }

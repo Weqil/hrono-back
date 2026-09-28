@@ -19,4 +19,9 @@ if [ -d storage ] && [ -d bootstrap/cache ]; then
     chmod -R ug+rwx storage bootstrap/cache 2>/dev/null || true
 fi
 
+# Миграции при старте app (replicas=1). Worker/scheduler: RUN_MIGRATIONS=false.
+if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -f artisan ]; then
+    php artisan migrate --force --no-interaction 2>&1 || true
+fi
+
 exec docker-php-entrypoint "$@"

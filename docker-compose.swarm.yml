@@ -1,10 +1,12 @@
 # Образы:
-#   app:   weqil/hrono-app:1.0.20
-#   nginx: weqil/hrono-nginx:1.0.20
+#   app:   weqil/hrono-app:1.0.23
+#   nginx: weqil/hrono-nginx:1.0.23
 # Сборка с Mac: только --platform linux/amd64 (иначе unsupported platform в Swarm).
 #   docker build --platform linux/amd64 -t weqil/hrono-app:TAG -f Dockerfile .
 #   docker build --platform linux/amd64 -t weqil/hrono-nginx:TAG -f docker/nginx/Dockerfile .
 # После push: на сервере обновить stack в Swarmpit и Redeploy (pull сам не обновляет сервисы).
+#
+# Автозакрытие стримов: сервисы worker + scheduler обязательны.
 
 version: "3.8"
 
@@ -26,7 +28,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.20
+    image: weqil/hrono-app:1.0.23
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -48,6 +50,8 @@ services:
       BROADCAST_CONNECTION: log
       API_SECRET: "${API_SECRET:-}"
       WS_SECRET_KEY: "${WS_SECRET_KEY:-}"
+      STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      RUN_MIGRATIONS: "true"
     volumes:
       - hrono_public:/shared-public
     networks:
@@ -59,8 +63,78 @@ services:
         condition: on-failure
         delay: 5s
 
+  # Delayed AutoCloseArrivalStreamJob
+  worker:
+    image: weqil/hrono-app:1.0.23
+    environment:
+      APP_NAME: Hrono
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: "${APP_URL:-http://94.230.132.168:8081}"
+      APP_KEY: "base64:ЗАМЕНИТЕ_ВАШ_КЛЮЧ"
+      APP_LOCALE: "ru"
+      APP_FALLBACK_LOCALE: "ru"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: hrono
+      DB_USERNAME: hrono
+      DB_PASSWORD: "${DB_PASSWORD:-secret}"
+      LOG_CHANNEL: stderr
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      BROADCAST_CONNECTION: log
+      API_SECRET: "${API_SECRET:-}"
+      WS_SECRET_KEY: "${WS_SECRET_KEY:-}"
+      STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      RUN_MIGRATIONS: "false"
+    command: ["php", "artisan", "queue:work", "database", "--sleep=1", "--tries=3", "--max-time=3600"]
+    networks:
+      - db_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+  # arrivals:auto-close-expired каждую минуту
+  scheduler:
+    image: weqil/hrono-app:1.0.23
+    environment:
+      APP_NAME: Hrono
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: "${APP_URL:-http://94.230.132.168:8081}"
+      APP_KEY: "base64:ЗАМЕНИТЕ_ВАШ_КЛЮЧ"
+      APP_LOCALE: "ru"
+      APP_FALLBACK_LOCALE: "ru"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: hrono
+      DB_USERNAME: hrono
+      DB_PASSWORD: "${DB_PASSWORD:-secret}"
+      LOG_CHANNEL: stderr
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      BROADCAST_CONNECTION: log
+      API_SECRET: "${API_SECRET:-}"
+      WS_SECRET_KEY: "${WS_SECRET_KEY:-}"
+      STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      RUN_MIGRATIONS: "false"
+    command: ["php", "artisan", "schedule:work"]
+    networks:
+      - db_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
   nginx:
-    image: weqil/hrono-nginx:1.0.20
+    image: weqil/hrono-nginx:1.0.23
     ports:
       - "${APP_PORT:-8081}:80"
     volumes:
