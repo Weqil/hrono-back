@@ -192,7 +192,30 @@ final class ArrivalResultsReducerTest extends TestCase
     }
 
     #[Test]
-    public function test_qualification_arrival_excludes_manual_and_following_lap_from_best_lap(): void
+    public function test_qualification_arrival_counts_manual_laps_by_default(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 4,
+                totalRaceTimeMs: 246_000,
+                laps: [
+                    ['lapTimeMs' => 65_000, 'timestampMs' => 65_000, 'isManual' => false],
+                    ['lapTimeMs' => 57_000, 'timestampMs' => 122_000, 'isManual' => true],
+                    ['lapTimeMs' => 61_000, 'timestampMs' => 183_000, 'isManual' => false],
+                    ['lapTimeMs' => 58_000, 'timestampMs' => 241_000, 'isManual' => false],
+                ],
+                lastLapTimestampMs: 241_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertSame(57_000, $result['participants'][0]['bestLapTimeMs']);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_excludes_manual_and_following_lap_from_best_lap_when_disabled(): void
     {
         $items = [
             $this->participant(
@@ -209,14 +232,14 @@ final class ArrivalResultsReducerTest extends TestCase
             ),
         ];
 
-        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification, false);
 
         $this->assertSame(58_000, $result['participants'][0]['bestLapTimeMs']);
         $this->assertSame(58_000, $result['participants'][0]['lastLapTimeMs']);
     }
 
     #[Test]
-    public function test_qualification_arrival_demotes_rider_without_eligible_best_lap(): void
+    public function test_qualification_arrival_demotes_rider_without_eligible_best_lap_when_manuals_ignored(): void
     {
         $items = [
             $this->participant(
@@ -238,7 +261,7 @@ final class ArrivalResultsReducerTest extends TestCase
             ),
         ];
 
-        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification, false);
 
         $this->assertSame([2, 1], array_column($result['participants'], 'id'));
         $this->assertSame(65_000, $result['participants'][0]['bestLapTimeMs']);
@@ -246,7 +269,37 @@ final class ArrivalResultsReducerTest extends TestCase
     }
 
     #[Test]
-    public function test_qualification_arrival_manual_lap_does_not_steal_first_place(): void
+    public function test_qualification_arrival_manual_lap_does_not_steal_first_place_when_manuals_ignored(): void
+    {
+        $items = [
+            $this->participant(
+                id: 1,
+                lapCount: 2,
+                totalRaceTimeMs: 109_000,
+                laps: [
+                    ['lapTimeMs' => 65_000, 'timestampMs' => 65_000, 'isManual' => false],
+                    ['lapTimeMs' => 44_000, 'timestampMs' => 109_000, 'isManual' => true],
+                ],
+                lastLapTimestampMs: 109_000,
+            ),
+            $this->participant(
+                id: 2,
+                lapCount: 1,
+                totalRaceTimeMs: 47_000,
+                laps: [['lapTimeMs' => 47_000, 'timestampMs' => 47_000, 'isManual' => false]],
+                lastLapTimestampMs: 47_000,
+            ),
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification, false);
+
+        $this->assertSame([2, 1], array_column($result['participants'], 'id'));
+        $this->assertSame(47_000, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(65_000, $result['participants'][1]['bestLapTimeMs']);
+    }
+
+    #[Test]
+    public function test_qualification_arrival_manual_lap_can_take_first_place_by_default(): void
     {
         $items = [
             $this->participant(
@@ -270,9 +323,9 @@ final class ArrivalResultsReducerTest extends TestCase
 
         $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
 
-        $this->assertSame([2, 1], array_column($result['participants'], 'id'));
-        $this->assertSame(47_000, $result['participants'][0]['bestLapTimeMs']);
-        $this->assertSame(65_000, $result['participants'][1]['bestLapTimeMs']);
+        $this->assertSame([1, 2], array_column($result['participants'], 'id'));
+        $this->assertSame(44_000, $result['participants'][0]['bestLapTimeMs']);
+        $this->assertSame(47_000, $result['participants'][1]['bestLapTimeMs']);
     }
 
     /**

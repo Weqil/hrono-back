@@ -91,7 +91,8 @@ final class ReceiveArrivalAction
 
         $arrival->loadMissing('arrivalType');
 
-        $reduced = ArrivalResultsReducer::reduce($request->json()->all(), $arrival->kind());
+        [$items, $countManualLaps] = self::parseLiveResultsPayload($request->json()->all());
+        $reduced = ArrivalResultsReducer::reduce($items, $arrival->kind(), $countManualLaps);
 
         $streamOpenedAtMs = $arrival->moto_stream_opened_at?->getTimestampMs();
 
@@ -141,5 +142,32 @@ final class ReceiveArrivalAction
                 'message' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Accepts either a legacy participants list or
+     * { participants: [...], count_manual_qualification_laps?: bool }.
+     *
+     * @param  array<int|string, mixed>  $body
+     * @return array{0: array<int, mixed>, 1: bool}
+     */
+    private static function parseLiveResultsPayload(array $body): array
+    {
+        $countManualLaps = true;
+
+        if (array_key_exists('participants', $body) && is_array($body['participants'])) {
+            if (array_key_exists('count_manual_qualification_laps', $body)) {
+                $parsed = filter_var(
+                    $body['count_manual_qualification_laps'],
+                    FILTER_VALIDATE_BOOLEAN,
+                    FILTER_NULL_ON_FAILURE,
+                );
+                $countManualLaps = $parsed ?? true;
+            }
+
+            return [array_values($body['participants']), $countManualLaps];
+        }
+
+        return [array_values($body), $countManualLaps];
     }
 }

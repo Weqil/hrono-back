@@ -41,7 +41,7 @@ final class QualificationBestLap
     /**
      * @param  array<int, array<string, mixed>>  $laps
      */
-    public static function isEligibleForBest(array $laps, int $index): bool
+    public static function isEligibleForBest(array $laps, int $index, bool $countManualLaps = true): bool
     {
         $lap = $laps[$index] ?? null;
         if (! is_array($lap)) {
@@ -52,12 +52,14 @@ final class QualificationBestLap
             return false;
         }
 
-        if (self::isManual($lap)) {
-            return false;
-        }
+        if (! $countManualLaps) {
+            if (self::isManual($lap)) {
+                return false;
+            }
 
-        if ($index > 0 && self::isManual($laps[$index - 1])) {
-            return false;
+            if ($index > 0 && self::isManual($laps[$index - 1])) {
+                return false;
+            }
         }
 
         return true;
@@ -67,7 +69,7 @@ final class QualificationBestLap
      * @param  array<int, array<string, mixed>>  $laps
      * @return array{lap_time_ms:int, timestamp_ms:int, lap_number:int}|null
      */
-    public static function getBestLap(array $laps): ?array
+    public static function getBestLap(array $laps, bool $countManualLaps = true): ?array
     {
         if ($laps === []) {
             return null;
@@ -76,7 +78,7 @@ final class QualificationBestLap
         $best = null;
 
         foreach ($laps as $index => $lap) {
-            if (! is_array($lap) || ! self::isEligibleForBest($laps, $index)) {
+            if (! is_array($lap) || ! self::isEligibleForBest($laps, $index, $countManualLaps)) {
                 continue;
             }
 
@@ -104,27 +106,27 @@ final class QualificationBestLap
     /**
      * @param  array<int, array<string, mixed>>  $laps
      */
-    public static function getBestLapTimeMs(array $laps): ?int
+    public static function getBestLapTimeMs(array $laps, bool $countManualLaps = true): ?int
     {
-        return self::getBestLap($laps)['lap_time_ms'] ?? null;
+        return self::getBestLap($laps, $countManualLaps)['lap_time_ms'] ?? null;
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $laps
      */
-    public static function getBestLapTimestampMs(array $laps): ?int
+    public static function getBestLapTimestampMs(array $laps, bool $countManualLaps = true): ?int
     {
-        return self::getBestLap($laps)['timestamp_ms'] ?? null;
+        return self::getBestLap($laps, $countManualLaps)['timestamp_ms'] ?? null;
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $lapsA
      * @param  array<int, array<string, mixed>>  $lapsB
      */
-    public static function compareBestLaps(array $lapsA, array $lapsB): int
+    public static function compareBestLaps(array $lapsA, array $lapsB, bool $countManualLaps = true): int
     {
-        $bestA = self::getBestLap($lapsA);
-        $bestB = self::getBestLap($lapsB);
+        $bestA = self::getBestLap($lapsA, $countManualLaps);
+        $bestB = self::getBestLap($lapsB, $countManualLaps);
         $aHasBest = $bestA !== null;
         $bHasBest = $bestB !== null;
 
@@ -152,7 +154,7 @@ final class QualificationBestLap
      *
      * @param  array<int, array<string, mixed>>  $laps
      */
-    public static function referenceBestLapTimeMs(array $laps, int $lastLapTimeMs): int
+    public static function referenceBestLapTimeMs(array $laps, int $lastLapTimeMs, bool $countManualLaps = true): int
     {
         if ($laps === []) {
             return $lastLapTimeMs;
@@ -165,7 +167,7 @@ final class QualificationBestLap
                 continue;
             }
 
-            if (! is_array($lap) || ! self::isEligibleForBest($laps, $index)) {
+            if (! is_array($lap) || ! self::isEligibleForBest($laps, $index, $countManualLaps)) {
                 continue;
             }
 

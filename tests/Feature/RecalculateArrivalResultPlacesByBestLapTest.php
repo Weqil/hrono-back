@@ -13,18 +13,16 @@ class RecalculateArrivalResultPlacesByBestLapTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_reassigns_places_by_best_lap_ignoring_first_lap(): void
+    public function test_it_reassigns_places_by_best_lap(): void
     {
         $arrival = $this->makeArrival();
 
-        // Первый круг быстрый (30с), но игнорируется. Лучший из остальных — 50с.
         $riderA = $this->makeResult($arrival, name: 'A', startNumber: 1, laps: [
             1 => 30_000,
             2 => 50_000,
             3 => 55_000,
         ]);
 
-        // Первый круг медленный, лучший из остальных — 48с.
         $riderB = $this->makeResult($arrival, name: 'B', startNumber: 2, laps: [
             1 => 90_000,
             2 => 48_000,
@@ -33,14 +31,36 @@ class RecalculateArrivalResultPlacesByBestLapTest extends TestCase
 
         app(RecalculateArrivalResultPlacesByBestLapAction::class)($arrival->id);
 
-        $this->assertSame(50_000, $riderA->fresh()->best_lap_time_ms);
+        $this->assertSame(30_000, $riderA->fresh()->best_lap_time_ms);
         $this->assertSame(48_000, $riderB->fresh()->best_lap_time_ms);
 
-        $this->assertSame(1, $riderB->fresh()->place);
-        $this->assertSame(2, $riderA->fresh()->place);
+        $this->assertSame(1, $riderA->fresh()->place);
+        $this->assertSame(2, $riderB->fresh()->place);
     }
 
-    public function test_it_places_results_without_scoring_laps_last(): void
+    public function test_it_counts_manual_laps_in_best_lap(): void
+    {
+        $arrival = $this->makeArrival();
+
+        $withManualBest = $this->makeResult($arrival, name: 'A', startNumber: 1, laps: [
+            1 => 65_000,
+            2 => 44_000,
+        ], manualLapNumbers: [2]);
+
+        $antennaOnly = $this->makeResult($arrival, name: 'B', startNumber: 2, laps: [
+            1 => 47_000,
+        ]);
+
+        app(RecalculateArrivalResultPlacesByBestLapAction::class)($arrival->id);
+
+        $this->assertSame(44_000, $withManualBest->fresh()->best_lap_time_ms);
+        $this->assertSame(47_000, $antennaOnly->fresh()->best_lap_time_ms);
+
+        $this->assertSame(1, $withManualBest->fresh()->place);
+        $this->assertSame(2, $antennaOnly->fresh()->place);
+    }
+
+    public function test_it_places_results_without_laps_last(): void
     {
         $arrival = $this->makeArrival();
 
@@ -49,18 +69,15 @@ class RecalculateArrivalResultPlacesByBestLapTest extends TestCase
             2 => 52_000,
         ]);
 
-        // Только первый круг — засчитываемых кругов нет.
-        $onlyFirstLap = $this->makeResult($arrival, name: 'B', startNumber: 2, laps: [
-            1 => 40_000,
-        ]);
+        $withoutLaps = $this->makeResult($arrival, name: 'B', startNumber: 2, laps: []);
 
         app(RecalculateArrivalResultPlacesByBestLapAction::class)($arrival->id);
 
-        $this->assertSame(52_000, $withBestLap->fresh()->best_lap_time_ms);
-        $this->assertSame(0, $onlyFirstLap->fresh()->best_lap_time_ms);
+        $this->assertSame(30_000, $withBestLap->fresh()->best_lap_time_ms);
+        $this->assertSame(0, $withoutLaps->fresh()->best_lap_time_ms);
 
         $this->assertSame(1, $withBestLap->fresh()->place);
-        $this->assertSame(2, $onlyFirstLap->fresh()->place);
+        $this->assertSame(2, $withoutLaps->fresh()->place);
     }
 
     private function makeArrival(): Arrival
@@ -77,9 +94,15 @@ class RecalculateArrivalResultPlacesByBestLapTest extends TestCase
 
     /**
      * @param  array<int, int>  $laps  lap_number => lap_time_ms
+     * @param  array<int, int>  $manualLapNumbers
      */
-    private function makeResult(Arrival $arrival, string $name, int $startNumber, array $laps): ArrivalResult
-    {
+    private function makeResult(
+        Arrival $arrival,
+        string $name,
+        int $startNumber,
+        array $laps,
+        array $manualLapNumbers = [],
+    ): ArrivalResult {
         $result = ArrivalResult::query()->create([
             'arrival_id' => $arrival->id,
             'server_race_id' => 1,
@@ -108,7 +131,7 @@ class RecalculateArrivalResultPlacesByBestLapTest extends TestCase
                 'lap_time_ms' => $lapTimeMs,
                 'timestamp_ms' => $timestamp,
                 'position_on_lap' => 1,
-                'is_manual' => false,
+                'is_manual' => in_array($lapNumber, $manualLapNumbers, true),
             ]);
         }
 

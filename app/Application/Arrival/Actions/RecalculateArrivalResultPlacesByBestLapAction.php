@@ -45,7 +45,7 @@ final class RecalculateArrivalResultPlacesByBestLapAction
     }
 
     /**
-     * Лучший круг с учётом ручных отметок и круга сразу после них.
+     * Лучший круг в квалификации. По умолчанию учитывает и ручные отметки.
      */
     private static function bestLapTimeMs(ArrivalResult $result): int
     {

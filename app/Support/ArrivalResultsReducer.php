@@ -10,10 +10,10 @@ final class ArrivalResultsReducer
      * @param  array<int, mixed>  $items  Массив участников из check-point, структура IParticipantState
      * @return array{last_lap_number:int, participants:array<int, mixed>} Reduced & sorted payload parts for Moto.
      */
-    public static function reduce(array $items, ?ArrivalKind $kind = null): array
+    public static function reduce(array $items, ?ArrivalKind $kind = null, bool $countManualLaps = true): array
     {
         if ($kind === ArrivalKind::Qualification) {
-            return self::reduceQualification($items);
+            return self::reduceQualification($items, $countManualLaps);
         }
 
         return self::reduceRegular($items);
@@ -125,7 +125,7 @@ final class ArrivalResultsReducer
      * @param  array<int, mixed>  $items
      * @return array{last_lap_number:int, participants:array<int, mixed>}
      */
-    private static function reduceQualification(array $items): array
+    private static function reduceQualification(array $items, bool $countManualLaps = true): array
     {
         $positionDeltaById = self::positionDeltaByParticipantId($items);
         $processedParticipants = [];
@@ -163,11 +163,15 @@ final class ArrivalResultsReducer
                 continue;
             }
 
-            $bestLap = QualificationBestLap::getBestLap($validLaps);
+            $bestLap = QualificationBestLap::getBestLap($validLaps, $countManualLaps);
             $bestLapTimeMs = $bestLap['lap_time_ms'] ?? null;
             $bestLapTimestampMs = $bestLap['timestamp_ms'] ?? null;
             $lastLapTimeMs = QualificationBestLap::lapTimeMs(end($validLaps));
-            $referenceBestLapTimeMs = QualificationBestLap::referenceBestLapTimeMs($validLaps, $lastLapTimeMs);
+            $referenceBestLapTimeMs = QualificationBestLap::referenceBestLapTimeMs(
+                $validLaps,
+                $lastLapTimeMs,
+                $countManualLaps,
+            );
             $lastLapNumber = (int) ($item['lapCount'] ?? count($validLaps));
 
             $processedParticipants[] = [
