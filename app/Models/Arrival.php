@@ -38,7 +38,7 @@ class Arrival extends Model
             'moto_stream_closed_at' => 'datetime',
             'moto_stream_id' => 'string',
             'stream_auto_close_at' => 'datetime',
-            'moto_stream_bearer' => 'encrypted',
+            'moto_stream_bearer' => 'string',
             'last_live_results_at' => 'datetime',
         ];
     }
@@ -115,19 +115,26 @@ class Arrival extends Model
 
     public function isStreamAutoCloseDue(?\DateTimeInterface $now = null): bool
     {
-        if ($this->stream_auto_close_at === null || ! $this->canCloseMotoStream()) {
+        if (! $this->canCloseMotoStream() || $this->moto_stream_opened_at === null) {
             return false;
         }
 
         $now = $now ?? now();
+        $dueAt = $this->stream_auto_close_at
+            ?? \App\Support\ArrivalStreamAutoClose::dueAt($this, $this->moto_stream_opened_at);
 
-        return $this->stream_auto_close_at->lessThanOrEqualTo($now);
+        if ($dueAt === null) {
+            return false;
+        }
+
+        return $dueAt->lessThanOrEqualTo($now);
     }
 
     /**
      * Live results may be forwarded only for the active arrival.
-     * Blocks closed / finished / expired / superseded arrivals so delayed checkpoint
+     * Blocks closed / finished / superseded arrivals so delayed checkpoint
      * packets cannot overwrite another heat on the same moto race.
+     * Past stream_auto_close_at still forwards: activity extends the idle deadline.
      */
     public function canForwardLiveResultsToMoto(?\DateTimeInterface $now = null): bool
     {
@@ -137,13 +144,6 @@ class Arrival extends Model
 
         if ($this->hasFinalResults()) {
             return false;
-        }
-
-        if ($this->stream_auto_close_at !== null) {
-            $now = $now ?? now();
-            if ($this->stream_auto_close_at->lessThanOrEqualTo($now)) {
-                return false;
-            }
         }
 
         // Not opened yet: allow only when no other heat still has an open flag

@@ -4,8 +4,11 @@ namespace App\Application\Arrival\Actions;
 
 use App\Application\Arrival\Enums\OpenArrivalStreamOutcome;
 use App\Application\Moto\Actions\SendRaceResultsToMotoAction;
+use App\Jobs\AutoCloseArrivalStreamJob;
 use App\Models\Arrival;
 use App\Support\ArrivalResultsReducer;
+use App\Support\ArrivalStreamAutoClose;
+use App\Support\ArrivalStreamBearerStore;
 use App\Support\MotoBearerExtractor;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -18,7 +21,6 @@ final class ReceiveArrivalAction
     public function __construct(
         private readonly SendRaceResultsToMotoAction $sendResultsToMoto,
         private readonly OpenArrivalStreamAction $openArrivalStream,
-        private readonly AutoCloseArrivalStreamAction $autoCloseArrivalStream,
     ) {}
 
     public function execute(string $id, Request $request): void
@@ -40,12 +42,32 @@ final class ReceiveArrivalAction
             return;
         }
 
-        if ($arrival->isStreamAutoCloseDue()) {
-            $this->autoCloseArrivalStream->execute($arrival);
+        $now = now();
+        $arrival->forceFill(['last_live_results_at' => $now])->save();
+
+        // Idle keep-alive: live traffic pushes auto-close deadline (does not shrink it).
+        if ($arrival->moto_stream_opened_at !== null && $arrival->moto_stream_closed_at === null) {
+            $previousDue = $arrival->stream_auto_close_at;
+            $newDue = ArrivalStreamAutoClose::extendFromActivity($arrival, $now);
+
+            if ($newDue !== null && ($previousDue === null || $newDue->greaterThan($previousDue))) {
+                $bearer = ArrivalStreamBearerStore::get($arrival)
+                    ?? MotoBearerExtractor::fromRequest($request);
+                if (is_string($bearer) && $bearer !== '') {
+                    ArrivalStreamBearerStore::put($arrival, $bearer, $newDue);
+                }
+
+                Log::channel('info')->info('arrivals.stream.auto_close_extended', [
+                    'arrival_id' => $arrival->getKey(),
+                    'previous_due' => $previousDue?->toIso8601String(),
+                    'stream_auto_close_at' => $newDue->toIso8601String(),
+                ]);
+
+                AutoCloseArrivalStreamJob::dispatch((int) $arrival->getKey())->delay($newDue);
+            }
+
             $arrival->refresh();
         }
-
-        $arrival->forceFill(['last_live_results_at' => now()])->save();
 
         if ($arrival->canOpenMotoStream()) {
             $outcome = $this->openArrivalStream->execute($id, $request);
@@ -93,8 +115,7 @@ final class ReceiveArrivalAction
         Request $request,
         array $items,
         bool $countManualLaps,
-    ): void
-    {
+    ): void {
         $bearer = MotoBearerExtractor::fromRequest($request);
 
         if ($bearer === null) {

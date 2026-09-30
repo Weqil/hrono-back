@@ -228,10 +228,11 @@ final class ArrivalStreamAutoCloseAndProtectionTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_due_auto_close_blocks_and_closes_on_late_results(): void
+    public function test_live_results_extend_idle_auto_close_deadline(): void
     {
+        Queue::fake();
+
         Http::fake([
-            'https://moto.test/api/races/156/stream/close' => Http::response(['ok' => true], 200),
             'https://moto.test/api/hrono/races/156/results' => Http::response(['ok' => true], 200),
         ]);
 
@@ -239,15 +240,20 @@ final class ArrivalStreamAutoCloseAndProtectionTest extends TestCase
             'name' => 'Заезд 1',
             'finished' => false,
             'round_min_time' => 60,
-            'time' => '00:10:00',
+            'time' => '00:01:00',
             'arrival_grades' => [],
             'moto_race_id' => 156,
         ]);
+        $opened = now()->subMinutes(5);
+        $oldDue = now()->subMinute();
         $arrival->forceFill([
-            'moto_stream_opened_at' => now()->subMinutes(25),
-            'stream_auto_close_at' => now()->subMinute(),
+            'moto_stream_opened_at' => $opened,
+            'moto_stream_id' => 'stream-xyz',
+            'stream_auto_close_at' => $oldDue,
             'moto_stream_bearer' => 'stored-token',
         ])->save();
+
+        $before = now();
 
         $this->postJson(
             "/arrivals/{$arrival->id}/results",
@@ -270,14 +276,53 @@ final class ArrivalStreamAutoCloseAndProtectionTest extends TestCase
             ],
             [
                 'X-Api-Secret' => 'test-secret',
-                'Authorization' => 'Bearer late-token',
+                'Authorization' => 'Bearer moto-token',
             ],
         )->assertOk();
+
+        $arrival->refresh();
+
+        $this->assertNull($arrival->moto_stream_closed_at);
+        $this->assertNotNull($arrival->stream_auto_close_at);
+        $this->assertTrue($arrival->stream_auto_close_at->greaterThan($oldDue));
+        $this->assertTrue(
+            $arrival->stream_auto_close_at->greaterThanOrEqualTo($before->copy()->addMinutes(10)->subSecond())
+        );
+        $this->assertTrue(
+            $arrival->stream_auto_close_at->lessThanOrEqualTo(now()->addMinutes(10)->addSecond())
+        );
+
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), '/results'));
+
+        Queue::assertPushed(AutoCloseArrivalStreamJob::class);
+    }
+
+    public function test_due_auto_close_still_closes_when_idle(): void
+    {
+        Http::fake([
+            'https://moto.test/api/races/156/stream/close' => Http::response(['ok' => true], 200),
+            'https://moto.test/api/hrono/races/156/results' => Http::response(['ok' => true], 200),
+        ]);
+
+        $arrival = Arrival::query()->create([
+            'name' => 'Заезд 1',
+            'finished' => false,
+            'round_min_time' => 60,
+            'time' => '00:10:00',
+            'arrival_grades' => [],
+            'moto_race_id' => 156,
+        ]);
+        $arrival->forceFill([
+            'moto_stream_opened_at' => now()->subMinutes(25),
+            'stream_auto_close_at' => now()->subMinute(),
+            'moto_stream_bearer' => 'stored-token',
+        ])->save();
+
+        $this->artisan('arrivals:auto-close-expired')->assertSuccessful();
 
         $arrival->refresh();
         $this->assertNotNull($arrival->moto_stream_closed_at);
 
         Http::assertSent(fn ($request): bool => $request->url() === 'https://moto.test/api/races/156/stream/close');
-        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/results'));
     }
 }

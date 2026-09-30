@@ -8,6 +8,7 @@ use App\Application\Moto\Actions\OpenRaceStreamAction;
 use App\Jobs\AutoCloseArrivalStreamJob;
 use App\Models\Arrival;
 use App\Support\ArrivalStreamAutoClose;
+use App\Support\ArrivalStreamBearerStore;
 use App\Support\MotoBearerExtractor;
 use App\Support\RequestTimeParser;
 use Illuminate\Http\Client\RequestException;
@@ -97,6 +98,17 @@ final class OpenArrivalStreamAction
             'stream_auto_close_at' => $autoCloseAt,
             'moto_stream_bearer' => $bearer,
         ])->save();
+
+        ArrivalStreamBearerStore::put($arrival, $bearer, $autoCloseAt);
+
+        Log::channel('info')->info('arrivals.stream.opened', [
+            'arrival_id' => $arrivalId,
+            'moto_race_id' => $arrival->moto_race_id,
+            'arrival_time' => $arrival->time,
+            'stream_opened_at' => $openedAt->toIso8601String(),
+            'stream_auto_close_at' => $autoCloseAt?->toIso8601String(),
+            'moto_stream_id' => $motoOpen['stream_id'],
+        ]);
 
         AutoCloseArrivalStreamJob::dispatch($arrival->getKey())
             ->delay($autoCloseAt);

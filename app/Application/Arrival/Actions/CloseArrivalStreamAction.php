@@ -5,6 +5,7 @@ namespace App\Application\Arrival\Actions;
 use App\Application\Arrival\Enums\CloseArrivalStreamOutcome;
 use App\Application\Moto\Actions\CloseRaceStreamAction;
 use App\Models\Arrival;
+use App\Support\ArrivalStreamBearerStore;
 use App\Support\MotoBearerExtractor;
 use App\Support\RequestTimeParser;
 use Illuminate\Http\Client\RequestException;
@@ -83,6 +84,8 @@ final class CloseArrivalStreamAction
 
     private function markClosedLocally(Arrival $arrival, mixed $closedAt): void
     {
+        ArrivalStreamBearerStore::forget($arrival);
+
         $arrival->forceFill([
             'moto_stream_closed_at' => $closedAt,
             'moto_stream_id' => null,
