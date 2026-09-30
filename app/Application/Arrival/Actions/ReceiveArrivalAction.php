@@ -71,15 +71,29 @@ final class ReceiveArrivalAction
                 'stream_closed_at' => $arrival->moto_stream_closed_at,
                 'stream_auto_close_at' => $arrival->stream_auto_close_at,
                 'has_final_results' => $arrival->hasFinalResults(),
+                'is_current_moto_stream' => $arrival->isCurrentMotoStream(),
             ]);
 
             return;
         }
 
-        $this->forwardResultsToMoto($id, $arrival, $request);
+        [$items, $countManualLaps] = self::parseLiveResultsPayload(
+            $request->json()->all(),
+            $request->query('count_manual_qualification_laps'),
+        );
+        $this->forwardResultsToMoto($id, $arrival, $request, $items, $countManualLaps);
     }
 
-    private function forwardResultsToMoto(string $arrivalId, Arrival $arrival, Request $request): void
+    /**
+     * @param  array<int, mixed>  $items
+     */
+    private function forwardResultsToMoto(
+        string $arrivalId,
+        Arrival $arrival,
+        Request $request,
+        array $items,
+        bool $countManualLaps,
+    ): void
     {
         $bearer = MotoBearerExtractor::fromRequest($request);
 
@@ -94,7 +108,6 @@ final class ReceiveArrivalAction
 
         $arrival->loadMissing('arrivalType');
 
-        [$items, $countManualLaps] = self::parseLiveResultsPayload($request->json()->all());
         $reduced = ArrivalResultsReducer::reduce($items, $arrival->kind(), $countManualLaps);
 
         $streamOpenedAtMs = $arrival->moto_stream_opened_at?->getTimestampMs();
@@ -150,25 +163,30 @@ final class ReceiveArrivalAction
     /**
      * Accepts either a legacy participants list or
      * { participants: [...], count_manual_qualification_laps?: bool }.
+     * Query/body flag overrides the default (count manuals = true).
      *
      * @param  array<int|string, mixed>  $body
      * @return array{0: array<int, mixed>, 1: bool}
      */
-    private static function parseLiveResultsPayload(array $body): array
+    private static function parseLiveResultsPayload(array $body, mixed $queryFlag = null): array
     {
         $countManualLaps = true;
+        $items = $body;
 
         if (array_key_exists('participants', $body) && is_array($body['participants'])) {
+            $items = $body['participants'];
             if (array_key_exists('count_manual_qualification_laps', $body)) {
                 $countManualLaps = self::parseCountManualQualificationLaps(
                     $body['count_manual_qualification_laps'],
                 );
             }
-
-            return [array_values($body['participants']), $countManualLaps];
         }
 
-        return [array_values($body), $countManualLaps];
+        if ($queryFlag !== null && $queryFlag !== '') {
+            $countManualLaps = self::parseCountManualQualificationLaps($queryFlag);
+        }
+
+        return [array_values($items), $countManualLaps];
     }
 
     private static function parseCountManualQualificationLaps(mixed $value): bool

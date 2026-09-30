@@ -125,7 +125,7 @@ class Arrival extends Model
     }
 
     /**
-     * Live results may be forwarded only for the active (or not-yet-opened) arrival.
+     * Live results may be forwarded only for the active arrival.
      * Blocks closed / finished / expired / superseded arrivals so delayed checkpoint
      * packets cannot overwrite another heat on the same moto race.
      */
@@ -146,13 +146,19 @@ class Arrival extends Model
             }
         }
 
-        $otherActiveExists = static::query()
-            ->where('moto_race_id', $this->moto_race_id)
-            ->whereKeyNot($this->getKey())
-            ->whereNotNull('moto_stream_opened_at')
-            ->whereNull('moto_stream_closed_at')
-            ->exists();
+        // Not opened yet: allow only when no other heat still has an open flag
+        // (open path may start the Mototrek stream in the same request).
+        if ($this->moto_stream_opened_at === null) {
+            return ! static::query()
+                ->where('moto_race_id', $this->moto_race_id)
+                ->whereKeyNot($this->getKey())
+                ->whereNotNull('moto_stream_opened_at')
+                ->whereNull('moto_stream_closed_at')
+                ->exists();
+        }
 
-        return ! $otherActiveExists;
+        // Already opened: the latest open arrival may forward even if older rows
+        // failed to clear their open flags (previously blocked all live updates).
+        return $this->isCurrentMotoStream();
     }
 }
