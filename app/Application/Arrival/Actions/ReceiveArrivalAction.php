@@ -60,6 +60,9 @@ final class ReceiveArrivalAction
             }
         }
 
+        // Re-read: a concurrent stream/close must not be overwritten by a stale in-flight results POST.
+        $arrival->refresh();
+
         if (! $arrival->canForwardLiveResultsToMoto()) {
             Log::channel('info')->warning('arrivals.results.moto_forward_skipped', [
                 'arrival_id' => $id,
@@ -157,17 +160,37 @@ final class ReceiveArrivalAction
 
         if (array_key_exists('participants', $body) && is_array($body['participants'])) {
             if (array_key_exists('count_manual_qualification_laps', $body)) {
-                $parsed = filter_var(
+                $countManualLaps = self::parseCountManualQualificationLaps(
                     $body['count_manual_qualification_laps'],
-                    FILTER_VALIDATE_BOOLEAN,
-                    FILTER_NULL_ON_FAILURE,
                 );
-                $countManualLaps = $parsed ?? true;
             }
 
             return [array_values($body['participants']), $countManualLaps];
         }
 
         return [array_values($body), $countManualLaps];
+    }
+
+    private static function parseCountManualQualificationLaps(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (int) $value !== 0;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['0', 'false', 'off', 'no'], true)) {
+                return false;
+            }
+            if (in_array($normalized, ['1', 'true', 'on', 'yes'], true)) {
+                return true;
+            }
+        }
+
+        return true;
     }
 }
