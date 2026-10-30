@@ -192,6 +192,36 @@ final class ArrivalResultsReducerTest extends TestCase
     }
 
     #[Test]
+    public function test_qualification_accepts_qualification_anchor_ms_as_start(): void
+    {
+        $items = [
+            [
+                'participantData' => [
+                    'id' => 1,
+                    'name' => 'Rider1',
+                    'surname' => 'Test',
+                    'patronymic' => '',
+                    'start_number' => 1,
+                    'status' => 'pending',
+                    'finishElapsedMs' => null,
+                ],
+                'lapCount' => 0,
+                'totalRaceTimeMs' => 15_000,
+                'lastLapTimestampMs' => 15_000,
+                'qualificationAnchorMs' => 15_000,
+                'laps' => [],
+            ],
+        ];
+
+        $result = ArrivalResultsReducer::reduce($items, ArrivalKind::Qualification);
+
+        $this->assertCount(1, $result['participants']);
+        $this->assertSame(1, $result['participants'][0]['id']);
+        $this->assertSame(0, $result['participants'][0]['lapCount']);
+        $this->assertArrayNotHasKey('bestLapTimeMs', $result['participants'][0]);
+    }
+
+    #[Test]
     public function test_qualification_arrival_counts_manual_laps_by_default(): void
     {
         $items = [

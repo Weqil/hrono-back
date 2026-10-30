@@ -140,7 +140,7 @@ final class ArrivalResultsReducer
                 $item['laps'] ?? [],
                 static fn ($lap): bool => is_array($lap) && QualificationBestLap::lapTimeMs($lap) > 0,
             ));
-            $startTimestampMs = (int) ($item['startTimestampMs'] ?? 0);
+            $startTimestampMs = (int) ($item['startTimestampMs'] ?? $item['qualificationAnchorMs'] ?? 0);
             $hasStartedOnly = $validLaps === [] && $startTimestampMs > 0;
 
             if ($validLaps === [] && ! $hasStartedOnly) {
