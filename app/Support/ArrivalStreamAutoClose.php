@@ -11,6 +11,9 @@ use Illuminate\Support\Carbon;
  * Initial deadline: opened_at + arrival.time + grace.
  * Each live-results packet while the stream is open pushes deadline to
  * max(opened_at + duration, now) + grace (idle keep-alive).
+ *
+ * Hard cap (default 24h from opened_at) never moves — live activity cannot
+ * keep a forgotten stream open past it.
  */
 final class ArrivalStreamAutoClose
 {
@@ -19,6 +22,18 @@ final class ArrivalStreamAutoClose
         $minutes = (int) config('hrono.stream_auto_close_grace_minutes', 10);
 
         return max(0, $minutes) * 60;
+    }
+
+    public static function maxSeconds(): int
+    {
+        $hours = (int) config('hrono.stream_auto_close_max_hours', 24);
+
+        return max(1, $hours) * 3600;
+    }
+
+    public static function hardCapAt(Carbon|\DateTimeInterface $openedAt): Carbon
+    {
+        return Carbon::parse($openedAt)->addSeconds(self::maxSeconds());
     }
 
     public static function raceEndAt(Arrival $arrival, Carbon|\DateTimeInterface $openedAt): Carbon
@@ -34,7 +49,10 @@ final class ArrivalStreamAutoClose
 
     public static function dueAt(Arrival $arrival, Carbon|\DateTimeInterface $openedAt): Carbon
     {
-        return self::raceEndAt($arrival, $openedAt)->addSeconds(self::graceSeconds());
+        return self::clampToHardCap(
+            self::raceEndAt($arrival, $openedAt)->addSeconds(self::graceSeconds()),
+            $openedAt,
+        );
     }
 
     /**
@@ -52,11 +70,15 @@ final class ArrivalStreamAutoClose
         $raceEnd = self::raceEndAt($arrival, $arrival->moto_stream_opened_at);
         $anchor = $at->greaterThan($raceEnd) ? $at : $raceEnd;
 
-        return $anchor->copy()->addSeconds(self::graceSeconds());
+        return self::clampToHardCap(
+            $anchor->copy()->addSeconds(self::graceSeconds()),
+            $arrival->moto_stream_opened_at,
+        );
     }
 
     /**
      * Extends stream_auto_close_at when live activity arrives. Never shrinks the deadline.
+     * Never extends past the hard cap.
      *
      * @return Carbon|null the deadline after this call (unchanged or extended)
      */
@@ -68,7 +90,22 @@ final class ArrivalStreamAutoClose
             return $arrival->stream_auto_close_at;
         }
 
-        $newDue = self::dueAfterActivity($arrival, $at ?? now());
+        $openedAt = $arrival->moto_stream_opened_at;
+        $hardCap = self::hardCapAt($openedAt);
+        $at = Carbon::parse($at ?? now());
+
+        // Past hard cap: freeze deadline at hard cap (auto-close is due).
+        if ($hardCap->lessThanOrEqualTo($at)) {
+            if ($arrival->stream_auto_close_at === null
+                || $arrival->stream_auto_close_at->greaterThan($hardCap)
+            ) {
+                $arrival->forceFill(['stream_auto_close_at' => $hardCap])->save();
+            }
+
+            return $hardCap;
+        }
+
+        $newDue = self::dueAfterActivity($arrival, $at);
 
         if ($newDue === null) {
             return null;
@@ -82,5 +119,14 @@ final class ArrivalStreamAutoClose
         $arrival->forceFill(['stream_auto_close_at' => $newDue])->save();
 
         return $newDue;
+    }
+
+    public static function clampToHardCap(
+        Carbon $due,
+        Carbon|\DateTimeInterface $openedAt,
+    ): Carbon {
+        $hardCap = self::hardCapAt($openedAt);
+
+        return $due->greaterThan($hardCap) ? $hardCap->copy() : $due;
     }
 }

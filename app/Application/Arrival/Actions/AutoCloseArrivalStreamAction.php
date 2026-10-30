@@ -12,13 +12,15 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Closes an open stream after race duration + idle grace when nobody closed it.
+ * Auto-finishes an open stream after race duration + idle grace (or hard cap):
+ * saves final results from the last live snapshot, then closes Mototrek.
  * Idle grace resets on live results (see ArrivalStreamAutoClose::extendFromActivity).
  */
 final class AutoCloseArrivalStreamAction
 {
     public function __construct(
         private readonly CloseRaceStreamAction $closeRaceStream,
+        private readonly PersistArrivalFinalResultsFromLiveSnapshotAction $persistFinalResults,
     ) {}
 
     public function execute(Arrival|string|int $arrival): CloseArrivalStreamOutcome
@@ -47,12 +49,18 @@ final class AutoCloseArrivalStreamAction
                 'stream_auto_close_at' => ($arrival->stream_auto_close_at
                     ?? ArrivalStreamAutoClose::dueAt($arrival, $arrival->moto_stream_opened_at)
                 )?->toIso8601String(),
+                'stream_hard_cap_at' => ArrivalStreamAutoClose::hardCapAt($arrival->moto_stream_opened_at)
+                    ->toIso8601String(),
             ]);
 
             return CloseArrivalStreamOutcome::NotOpened;
         }
 
         $closedAt = now();
+
+        // Persist finals before Motо close so a transient Motо failure still leaves results.
+        $this->persistFinalResults->execute($arrival, $closedAt);
+        $arrival->refresh();
 
         if (! $arrival->isCurrentMotoStream()) {
             $this->markClosedLocally($arrival, $closedAt);
@@ -103,6 +111,7 @@ final class AutoCloseArrivalStreamAction
         Log::channel('info')->info('arrivals.stream.auto_closed', [
             'arrival_id' => $arrival->getKey(),
             'moto_race_id' => $arrival->moto_race_id,
+            'has_final_results' => $arrival->fresh()?->hasFinalResults() ?? false,
         ]);
 
         return CloseArrivalStreamOutcome::Closed;
@@ -135,6 +144,7 @@ final class AutoCloseArrivalStreamAction
             'moto_stream_id' => null,
             'stream_auto_close_at' => null,
             'moto_stream_bearer' => null,
+            'last_live_results' => null,
         ])->save();
     }
 }

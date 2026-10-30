@@ -22,6 +22,7 @@ final class ArrivalStreamAutoCloseAndProtectionTest extends TestCase
             'hrono.api_secret' => 'test-secret',
             'hrono.moto_api_url' => 'https://moto.test/api/',
             'hrono.stream_auto_close_grace_minutes' => 10,
+            'hrono.stream_auto_close_max_hours' => 24,
         ]);
 
         $this->seed(ArrivalTypeSeeder::class);
@@ -324,5 +325,175 @@ final class ArrivalStreamAutoCloseAndProtectionTest extends TestCase
         $this->assertNotNull($arrival->moto_stream_closed_at);
 
         Http::assertSent(fn ($request): bool => $request->url() === 'https://moto.test/api/races/156/stream/close');
+    }
+
+    public function test_auto_close_saves_final_results_from_last_live_snapshot(): void
+    {
+        Http::fake([
+            'https://moto.test/api/races/156/stream/close' => Http::response(['ok' => true], 200),
+        ]);
+
+        $arrival = Arrival::query()->create([
+            'name' => 'Заезд 1',
+            'finished' => false,
+            'round_min_time' => 60,
+            'time' => '00:10:00',
+            'arrival_grades' => [],
+            'moto_race_id' => 156,
+        ]);
+        $arrival->forceFill([
+            'moto_stream_opened_at' => now()->subMinutes(25),
+            'stream_auto_close_at' => now()->subMinute(),
+            'moto_stream_bearer' => 'stored-token',
+            'last_live_results' => [
+                [
+                    'id' => 12,
+                    'lapCount' => 2,
+                    'totalRaceTimeMs' => 120000,
+                    'lastLapTimestampMs' => 120000,
+                    'participantData' => [
+                        'id' => 12,
+                        'name' => 'Иван',
+                        'surname' => 'Петров',
+                        'start_number' => 7,
+                        'grade' => '125',
+                    ],
+                    'laps' => [
+                        ['lapNumber' => 1, 'lapTimeMs' => 61000, 'timestampMs' => 61000, 'isManual' => false],
+                        ['lapNumber' => 2, 'lapTimeMs' => 59000, 'timestampMs' => 120000, 'isManual' => false],
+                    ],
+                ],
+            ],
+        ])->save();
+
+        $this->artisan('arrivals:auto-close-expired')->assertSuccessful();
+
+        $arrival->refresh();
+        $this->assertNotNull($arrival->moto_stream_closed_at);
+        $this->assertTrue($arrival->finished);
+        $this->assertNotNull($arrival->finished_at);
+        $this->assertTrue($arrival->hasFinalResults());
+        $this->assertNull($arrival->last_live_results);
+        $this->assertDatabaseCount('arrival_results', 1);
+        $this->assertDatabaseCount('arrival_result_laps', 2);
+        $this->assertDatabaseHas('arrival_results', [
+            'arrival_id' => $arrival->id,
+            'user_id' => 12,
+            'place' => 1,
+            'total_laps' => 2,
+            'total_time_ms' => 120000,
+            'best_lap_time_ms' => 59000,
+        ]);
+    }
+
+    public function test_hard_cap_closes_even_when_idle_deadline_is_still_in_future(): void
+    {
+        config(['hrono.stream_auto_close_max_hours' => 1]);
+
+        Http::fake([
+            'https://moto.test/api/races/156/stream/close' => Http::response(['ok' => true], 200),
+        ]);
+
+        $arrival = Arrival::query()->create([
+            'name' => 'Заезд 1',
+            'finished' => false,
+            'round_min_time' => 60,
+            'time' => '00:10:00',
+            'arrival_grades' => [],
+            'moto_race_id' => 156,
+        ]);
+        // Idle grace pushed far ahead, but hard cap (1h) already passed.
+        $arrival->forceFill([
+            'moto_stream_opened_at' => now()->subHours(2),
+            'stream_auto_close_at' => now()->addHours(3),
+            'moto_stream_bearer' => 'stored-token',
+            'last_live_results' => [
+                [
+                    'id' => 1,
+                    'lapCount' => 1,
+                    'totalRaceTimeMs' => 50000,
+                    'participantData' => [
+                        'id' => 1,
+                        'name' => 'A',
+                        'surname' => 'B',
+                        'start_number' => 1,
+                    ],
+                    'laps' => [
+                        ['lapNumber' => 1, 'lapTimeMs' => 50000, 'timestampMs' => 50000, 'isManual' => false],
+                    ],
+                ],
+            ],
+        ])->save();
+
+        $this->assertTrue($arrival->isStreamAutoCloseDue());
+
+        $this->artisan('arrivals:auto-close-expired')->assertSuccessful();
+
+        $arrival->refresh();
+        $this->assertNotNull($arrival->moto_stream_closed_at);
+        $this->assertTrue($arrival->hasFinalResults());
+    }
+
+    public function test_live_results_do_not_extend_deadline_past_hard_cap(): void
+    {
+        config(['hrono.stream_auto_close_max_hours' => 1]);
+        Queue::fake();
+
+        Http::fake([
+            'https://moto.test/api/hrono/races/156/results' => Http::response(['ok' => true], 200),
+        ]);
+
+        $opened = now()->subMinutes(50);
+        $hardCap = $opened->copy()->addHour();
+
+        $arrival = Arrival::query()->create([
+            'name' => 'Заезд 1',
+            'finished' => false,
+            'round_min_time' => 60,
+            'time' => '00:10:00',
+            'arrival_grades' => [],
+            'moto_race_id' => 156,
+        ]);
+        $arrival->forceFill([
+            'moto_stream_opened_at' => $opened,
+            'moto_stream_id' => 'stream-xyz',
+            'stream_auto_close_at' => $opened->copy()->addMinutes(20),
+            'moto_stream_bearer' => 'stored-token',
+        ])->save();
+
+        $this->postJson(
+            "/arrivals/{$arrival->id}/results",
+            [
+                [
+                    'id' => 1,
+                    'lapCount' => 1,
+                    'totalRaceTimeMs' => 50000,
+                    'lastLapTimestampMs' => 50000,
+                    'participantData' => [
+                        'id' => 1,
+                        'name' => 'Иван',
+                        'surname' => 'Иванов',
+                        'start_number' => 1,
+                    ],
+                    'laps' => [
+                        ['lapTimeMs' => 50000],
+                    ],
+                ],
+            ],
+            [
+                'X-Api-Secret' => 'test-secret',
+                'Authorization' => 'Bearer moto-token',
+            ],
+        )->assertOk();
+
+        $arrival->refresh();
+
+        $this->assertNotNull($arrival->last_live_results);
+        $this->assertNotNull($arrival->stream_auto_close_at);
+        $this->assertTrue(
+            $arrival->stream_auto_close_at->lessThanOrEqualTo($hardCap->copy()->addSecond()),
+            'deadline must not exceed hard cap',
+        );
+        $this->assertNull($arrival->moto_stream_closed_at);
     }
 }

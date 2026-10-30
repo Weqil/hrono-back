@@ -91,6 +91,7 @@ final class CloseArrivalStreamAction
             'moto_stream_id' => null,
             'stream_auto_close_at' => null,
             'moto_stream_bearer' => null,
+            'last_live_results' => null,
         ])->save();
     }
 }

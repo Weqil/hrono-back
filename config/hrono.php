@@ -18,9 +18,15 @@ return [
     | Idle-grace автозакрытия трансляции (минуты).
     | Старт: opened_at + duration(arrival.time) + grace.
     | Каждый live-results сдвигает deadline на max(конец заезда, now) + grace.
-    | Если за grace после последней активности ничего не пришло — закрываем сами.
+    | Если за grace после последней активности ничего не пришло — закрываем + сохраняем итоги.
     */
     'stream_auto_close_grace_minutes' => (int) env('STREAM_AUTO_CLOSE_GRACE_MINUTES', 10),
+
+    /*
+    | Жёсткий потолок автозавершения (часы от opened_at).
+    | Live-активность не может продлить стрим дальше этого лимита.
+    */
+    'stream_auto_close_max_hours' => (int) env('STREAM_AUTO_CLOSE_MAX_HOURS', 24),
 
     /*
     | Fallback Bearer for Motо stream/close from worker/scheduler when the
@@ -29,3 +35,4 @@ return [
     'moto_service_bearer' => env('MOTO_SERVICE_BEARER', ''),
 
 ];
+

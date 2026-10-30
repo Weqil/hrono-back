@@ -12,7 +12,7 @@ final class AutoCloseExpiredArrivalStreamsCommand extends Command
 {
     protected $signature = 'arrivals:auto-close-expired';
 
-    protected $description = 'Close arrival streams past duration + grace when nobody closed them';
+    protected $description = 'Auto-finish arrival streams past duration+grace (or hard cap): save finals + close Mototrek';
 
     public function handle(AutoCloseArrivalStreamAction $action): int
     {

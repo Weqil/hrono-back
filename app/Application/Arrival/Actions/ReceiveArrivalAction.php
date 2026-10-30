@@ -43,14 +43,27 @@ final class ReceiveArrivalAction
         }
 
         $now = now();
-        $arrival->forceFill(['last_live_results_at' => $now])->save();
+        [$items, $countManualLaps] = self::parseLiveResultsPayload(
+            $request->json()->all(),
+            $request->query('count_manual_qualification_laps'),
+        );
 
-        // Idle keep-alive: live traffic pushes auto-close deadline (does not shrink it).
+        // Snapshot for auto-finish (close + save). Keep even if Motо forward is skipped later.
+        if ($arrival->moto_stream_closed_at === null && ! $arrival->hasFinalResults()) {
+            $arrival->forceFill([
+                'last_live_results_at' => $now,
+                'last_live_results' => array_values($items),
+            ])->save();
+        } else {
+            $arrival->forceFill(['last_live_results_at' => $now])->save();
+        }
+
+        // Idle keep-alive: live traffic pushes auto-close deadline (does not shrink it / past hard cap).
         if ($arrival->moto_stream_opened_at !== null && $arrival->moto_stream_closed_at === null) {
             $previousDue = $arrival->stream_auto_close_at;
             $newDue = ArrivalStreamAutoClose::extendFromActivity($arrival, $now);
 
-            if ($newDue !== null && ($previousDue === null || $newDue->greaterThan($previousDue))) {
+            if ($newDue !== null && ($previousDue === null || ! $newDue->equalTo($previousDue))) {
                 $bearer = ArrivalStreamBearerStore::get($arrival)
                     ?? MotoBearerExtractor::fromRequest($request);
                 if (is_string($bearer) && $bearer !== '') {
@@ -61,9 +74,13 @@ final class ReceiveArrivalAction
                     'arrival_id' => $arrival->getKey(),
                     'previous_due' => $previousDue?->toIso8601String(),
                     'stream_auto_close_at' => $newDue->toIso8601String(),
+                    'stream_hard_cap_at' => ArrivalStreamAutoClose::hardCapAt($arrival->moto_stream_opened_at)
+                        ->toIso8601String(),
                 ]);
 
-                AutoCloseArrivalStreamJob::dispatch((int) $arrival->getKey())->delay($newDue);
+                // Past hard cap → fire immediately; otherwise delay until due.
+                $delay = $newDue->isFuture() ? $newDue : now();
+                AutoCloseArrivalStreamJob::dispatch((int) $arrival->getKey())->delay($delay);
             }
 
             $arrival->refresh();
@@ -99,10 +116,6 @@ final class ReceiveArrivalAction
             return;
         }
 
-        [$items, $countManualLaps] = self::parseLiveResultsPayload(
-            $request->json()->all(),
-            $request->query('count_manual_qualification_laps'),
-        );
         $this->forwardResultsToMoto($id, $arrival, $request, $items, $countManualLaps);
     }
 

@@ -40,6 +40,7 @@ class Arrival extends Model
             'stream_auto_close_at' => 'datetime',
             'moto_stream_bearer' => 'string',
             'last_live_results_at' => 'datetime',
+            'last_live_results' => 'array',
         ];
     }
 
@@ -120,6 +121,12 @@ class Arrival extends Model
         }
 
         $now = $now ?? now();
+
+        $hardCap = \App\Support\ArrivalStreamAutoClose::hardCapAt($this->moto_stream_opened_at);
+        if ($hardCap->lessThanOrEqualTo($now)) {
+            return true;
+        }
+
         $dueAt = $this->stream_auto_close_at
             ?? \App\Support\ArrivalStreamAutoClose::dueAt($this, $this->moto_stream_opened_at);
 

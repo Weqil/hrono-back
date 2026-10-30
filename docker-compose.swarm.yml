@@ -1,5 +1,5 @@
 # Образы:
-#   app:   weqil/hrono-app:1.0.29
+#   app:   weqil/hrono-app:1.0.30
 #   nginx: weqil/hrono-nginx:1.0.28
 # Сборка с Mac: только --platform linux/amd64 (иначе unsupported platform в Swarm).
 #   docker build --platform linux/amd64 -t weqil/hrono-app:TAG -f Dockerfile .
@@ -28,7 +28,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.29
+    image: weqil/hrono-app:1.0.30
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -53,6 +53,7 @@ services:
       MOTO_API_URL: "${MOTO_API_URL:-}"
       MOTO_SERVICE_BEARER: "${MOTO_SERVICE_BEARER:-}"
       STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      STREAM_AUTO_CLOSE_MAX_HOURS: "${STREAM_AUTO_CLOSE_MAX_HOURS:-24}"
       RUN_MIGRATIONS: "true"
     volumes:
       - hrono_public:/shared-public
@@ -67,7 +68,7 @@ services:
 
   # Delayed AutoCloseArrivalStreamJob — нужны те же MOTO_* что у app
   worker:
-    image: weqil/hrono-app:1.0.29
+    image: weqil/hrono-app:1.0.30
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -92,6 +93,7 @@ services:
       MOTO_API_URL: "${MOTO_API_URL:-}"
       MOTO_SERVICE_BEARER: "${MOTO_SERVICE_BEARER:-}"
       STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      STREAM_AUTO_CLOSE_MAX_HOURS: "${STREAM_AUTO_CLOSE_MAX_HOURS:-24}"
       RUN_MIGRATIONS: "false"
     command: ["php", "artisan", "queue:work", "database", "--sleep=1", "--tries=3", "--max-time=3600"]
     networks:
@@ -104,7 +106,7 @@ services:
 
   # arrivals:auto-close-expired каждую минуту — нужны те же MOTO_* что у app
   scheduler:
-    image: weqil/hrono-app:1.0.29
+    image: weqil/hrono-app:1.0.30
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -129,6 +131,7 @@ services:
       MOTO_API_URL: "${MOTO_API_URL:-}"
       MOTO_SERVICE_BEARER: "${MOTO_SERVICE_BEARER:-}"
       STREAM_AUTO_CLOSE_GRACE_MINUTES: "${STREAM_AUTO_CLOSE_GRACE_MINUTES:-10}"
+      STREAM_AUTO_CLOSE_MAX_HOURS: "${STREAM_AUTO_CLOSE_MAX_HOURS:-24}"
       RUN_MIGRATIONS: "false"
     command: ["php", "artisan", "schedule:work"]
     networks:
