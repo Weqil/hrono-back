@@ -1,5 +1,5 @@
 # Образы:
-#   app:   weqil/hrono-app:1.0.28
+#   app:   weqil/hrono-app:1.0.29
 #   nginx: weqil/hrono-nginx:1.0.28
 # Сборка с Mac: только --platform linux/amd64 (иначе unsupported platform в Swarm).
 #   docker build --platform linux/amd64 -t weqil/hrono-app:TAG -f Dockerfile .
@@ -28,7 +28,7 @@ services:
         delay: 5s
 
   app:
-    image: weqil/hrono-app:1.0.28
+    image: weqil/hrono-app:1.0.29
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -67,7 +67,7 @@ services:
 
   # Delayed AutoCloseArrivalStreamJob — нужны те же MOTO_* что у app
   worker:
-    image: weqil/hrono-app:1.0.28
+    image: weqil/hrono-app:1.0.29
     environment:
       APP_NAME: Hrono
       APP_ENV: production
@@ -104,7 +104,7 @@ services:
 
   # arrivals:auto-close-expired каждую минуту — нужны те же MOTO_* что у app
   scheduler:
-    image: weqil/hrono-app:1.0.28
+    image: weqil/hrono-app:1.0.29
     environment:
       APP_NAME: Hrono
       APP_ENV: production
